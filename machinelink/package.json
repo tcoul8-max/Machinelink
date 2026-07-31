@@ -1,0 +1,15 @@
+{
+  "name": "machinelink-server",
+  "version": "1.0.0",
+  "description": "Machinery Prestart & Daily Job Docket Standalone Server Node on Port 3004",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "pm2": "pm2 start server.js --name machinelink-3004 --watch"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Machinery Prestarts & Dockets",
+  "description": "Field machinery prestart checklists, offline syncing, machine-specific templates, job dockets with PDF generator, and Tailscale server tower sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

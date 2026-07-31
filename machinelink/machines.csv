@@ -1,0 +1,7 @@
+id,unitCode,name,rego,prestartType,currentHours,status
+m_101,EX-301,Caterpillar 336 Excavator,1GEX-991,2,4250.5,Operational
+m_102,DZ-104,Komatsu D65EX Dozer,1GDZ-204,2,3120.0,Operational
+m_103,WL-802,CAT 966M Wheel Loader,1GWL-802,1,1890.2,Operational
+m_104,DT-505,Volvo A45G Articulated Haul Truck,1GDT-505,1,5610.8,Operational
+m_105,LV-012,Toyota Landcruiser 79 Series 4x4,1GLV-012,3,84200.0,Operational
+m_106,GR-201,CAT 14M Motor Grader,1GGR-201,1,2740.0,Operational

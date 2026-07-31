@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="100" fill="#0f172a"/>
+  <rect x="24" y="24" width="464" height="464" rx="80" fill="none" stroke="#f59e0b" stroke-width="12"/>
+  
+  <!-- Machinery / Excavator Safety Badge Graphic -->
+  <path d="M 120 360 L 392 360 L 360 280 L 152 280 Z" fill="#f59e0b" stroke="#d97706" stroke-width="6"/>
+  <circle cx="160" cy="380" r="28" fill="#1e293b" stroke="#f59e0b" stroke-width="8"/>
+  <circle cx="352" cy="380" r="28" fill="#1e293b" stroke="#f59e0b" stroke-width="8"/>
+  <rect x="152" y="372" width="200" height="16" fill="#f59e0b"/>
+  
+  <!-- Boom / Arm -->
+  <path d="M 320 280 L 390 180 L 440 230" fill="none" stroke="#f59e0b" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Bucket -->
+  <path d="M 440 230 L 470 270 L 430 290 Z" fill="#f59e0b"/>
+  <!-- Cabin -->
+  <rect x="175" y="200" width="90" height="80" rx="12" fill="#1e293b" stroke="#f59e0b" stroke-width="8"/>
+  <rect x="190" y="215" width="60" height="45" rx="6" fill="#38bdf8"/>
+  
+  <!-- Text Badge -->
+  <text x="256" y="140" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="44" fill="#f8fafc" text-anchor="middle" letter-spacing="4">MACHINELINK</text>
+  <text x="256" y="460" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="28" fill="#f59e0b" text-anchor="middle" letter-spacing="2">SAFETY PRESTARTS</text>
+</svg>
