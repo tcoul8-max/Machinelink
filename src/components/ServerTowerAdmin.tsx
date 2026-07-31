@@ -53,16 +53,22 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
       const ipParam = `?ip=${encodeURIComponent(currentIp)}`;
 
       const res = await fetch(`/api/server-info${ipParam}`);
-      const info = await res.json();
-      setServerInfo(info);
+      const text = await res.text();
+      if (res.ok && !text.trim().startsWith('<')) {
+        setServerInfo(JSON.parse(text));
+      }
 
       const csvRes = await fetch(`/api/prestarts/csv-data${ipParam}`);
-      const csv = await csvRes.json();
-      setCsvData(csv);
+      const csvText = await csvRes.text();
+      if (csvRes.ok && !csvText.trim().startsWith('<')) {
+        setCsvData(JSON.parse(csvText));
+      }
 
       const docRes = await fetch(`/api/dockets${ipParam}`);
-      const dockets = await docRes.json();
-      setServerDockets(dockets);
+      const docText = await docRes.text();
+      if (docRes.ok && !docText.trim().startsWith('<')) {
+        setServerDockets(JSON.parse(docText));
+      }
     } catch (e) {
       console.error('Failed to fetch server tower data', e);
     } finally {

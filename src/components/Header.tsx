@@ -30,25 +30,56 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
   const testServerConnection = async (ipToTest: string) => {
     setConnectionStatus(prev => ({ ...prev, isChecking: true }));
     try {
-      const res = await fetch(`/api/health-check?ip=${encodeURIComponent(ipToTest)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.online) {
-          setConnectionStatus({ isOnline: true, isChecking: false });
+      let isOnline = false;
+      let lastError = '';
+
+      // Step 1: Try proxy endpoint
+      try {
+        const res = await fetch(`/api/health-check?ip=${encodeURIComponent(ipToTest)}`);
+        const text = await res.text();
+        if (!text.trim().startsWith('<') && !text.includes('<html')) {
+          const data = JSON.parse(text);
+          if (res.ok && data.online) {
+            isOnline = true;
+          } else {
+            lastError = data.error || `Proxy HTTP ${res.status}`;
+          }
         } else {
-          setConnectionStatus({
-            isOnline: false,
-            isChecking: false,
-            error: data.error || 'Server node unreachable at target IP'
-          });
+          throw new Error('Static host detected (GitHub Pages /api proxy unavailable)');
         }
-      } else {
-        setConnectionStatus({
-          isOnline: false,
-          isChecking: false,
-          error: `HTTP ${res.status} returned`
-        });
+      } catch (proxyErr: any) {
+        lastError = proxyErr.message || 'Proxy error';
+
+        // Step 2: Try direct browser fetch to target IP
+        let targetUrl = ipToTest.trim();
+        if (!/^https?:\/\//i.test(targetUrl)) {
+          targetUrl = !targetUrl.includes(':') ? `http://${targetUrl}:3004` : `http://${targetUrl}`;
+        }
+        targetUrl = `${targetUrl.replace(/\/$/, '')}/api/server-info`;
+
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3500);
+          const directRes = await fetch(targetUrl, { signal: controller.signal });
+          clearTimeout(timeoutId);
+
+          const directText = await directRes.text();
+          if (!directText.trim().startsWith('<') && !directText.includes('<html')) {
+            const directData = JSON.parse(directText);
+            if (directRes.ok && directData) {
+              isOnline = true;
+            }
+          }
+        } catch (directErr: any) {
+          lastError = `Unreachable (${directErr.message || 'Timed out'})`;
+        }
       }
+
+      setConnectionStatus({
+        isOnline,
+        isChecking: false,
+        error: isOnline ? undefined : lastError
+      });
     } catch (e: any) {
       setConnectionStatus({
         isOnline: false,

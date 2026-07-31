@@ -22,28 +22,83 @@ export const TailscaleIpModal: React.FC<TailscaleIpModalProps> = ({ isOpen, onCl
     setIsTesting(true);
     setTestResult(null);
 
+    const targetIp = ipInput.trim();
+
     try {
-      const res = await fetch('/api/tailscale/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip: ipInput.trim() })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setTestResult({
-          success: true,
-          message: `Connected successfully! Node is ONLINE on port ${data.serverInfo?.port || 3004}`
+      let isSuccess = false;
+      let resultMsg = '';
+
+      // Step 1: Try proxy route /api/tailscale/test first
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch('/api/tailscale/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ip: targetIp }),
+          signal: controller.signal
         });
-      } else {
-        setTestResult({
-          success: false,
-          message: data.message || 'Unable to connect to Tailscale server node.'
-        });
+        clearTimeout(timeoutId);
+
+        const text = await res.text();
+        if (text.trim().startsWith('<') || text.includes('<html')) {
+          throw new Error('Static host detected (relative /api backend proxy unavailable on GitHub Pages)');
+        }
+
+        const data = JSON.parse(text);
+        if (res.ok && data.success) {
+          isSuccess = true;
+          resultMsg = `Connected via backend proxy!\nNode is ONLINE on port ${data.serverInfo?.port || 3004}`;
+        } else {
+          resultMsg = data.message || `Proxy server returned HTTP ${res.status}`;
+        }
+      } catch (proxyErr: any) {
+        // Step 2: Proxy unavailable or returned HTML (e.g. on GitHub Pages). Try direct client fetch!
+        let directUrl = targetIp;
+        if (!/^https?:\/\//i.test(directUrl)) {
+          directUrl = !directUrl.includes(':') ? `http://${directUrl}:3004` : `http://${directUrl}`;
+        }
+        directUrl = `${directUrl.replace(/\/$/, '')}/api/server-info`;
+
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+          const directRes = await fetch(directUrl, { signal: controller.signal });
+          clearTimeout(timeoutId);
+
+          const directText = await directRes.text();
+          if (directText.trim().startsWith('<') || directText.includes('<html')) {
+            throw new Error(`Target ${directUrl} returned HTML page instead of JSON`);
+          }
+
+          const directData = JSON.parse(directText);
+          if (directRes.ok && directData) {
+            isSuccess = true;
+            resultMsg = `Connected directly from browser!\nNode ONLINE on port ${directData.port || 3004}`;
+          } else {
+            resultMsg = `Direct request to ${directUrl} returned status ${directRes.status}`;
+          }
+        } catch (directErr: any) {
+          const isHttps = window.location.protocol === 'https:';
+          const isMixedContent = isHttps && directUrl.startsWith('http:');
+
+          let directFail = directErr.message || 'Connection failed';
+          if (isMixedContent) {
+            directFail += ' (Blocked by browser: HTTPS GitHub Pages cannot fetch HTTP resources)';
+          }
+
+          resultMsg = `Connection Test Diagnostics:\n\n1. Backend Proxy Check:\n   ${proxyErr.message}\n\n2. Direct Browser Check (${directUrl}):\n   ${directFail}\n\n💡 Solution for GitHub Pages:\nSince GitHub Pages is a static HTTPS site without a backend proxy, to connect directly:\n• Use a Tailscale Funnel HTTPS URL (e.g., https://your-node.ts.net), or\n• Access the app from your local server or Cloud Run full-stack URL.`;
+        }
       }
+
+      setTestResult({
+        success: isSuccess,
+        message: resultMsg
+      });
     } catch (e: any) {
       setTestResult({
         success: false,
-        message: `Connection error: ${e.message || 'Timed out'}`
+        message: `Connection Error:\n${e.message || 'Unknown network error'}`
       });
     } finally {
       setIsTesting(false);
@@ -141,18 +196,20 @@ export const TailscaleIpModal: React.FC<TailscaleIpModalProps> = ({ isOpen, onCl
 
           {/* Test Result Feedback */}
           {testResult && (
-            <div className={`p-3 rounded-2xl border text-xs font-bold ${
+            <div className={`p-3.5 rounded-2xl border ${
               testResult.success
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
             }`}>
-              <div className="flex items-start gap-2">
+              <div className="flex items-start gap-2.5">
                 {testResult.success ? (
                   <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 ) : (
                   <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                 )}
-                <span>{testResult.message}</span>
+                <div className="whitespace-pre-wrap break-words font-sans text-xs font-semibold leading-relaxed max-h-60 overflow-y-auto w-full pr-1">
+                  {testResult.message}
+                </div>
               </div>
             </div>
           )}

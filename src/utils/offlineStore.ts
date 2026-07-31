@@ -118,11 +118,16 @@ export async function attemptServerSync(): Promise<{
       body: JSON.stringify({ prestarts, dockets, ip: targetIp }),
     });
 
+    const text = await res.text();
+    if (text.trim().startsWith('<') || text.includes('<html')) {
+      throw new Error('Static host detected (/api proxy route returned HTML page on GitHub Pages)');
+    }
+
     if (!res.ok) {
       throw new Error(`Server returned HTTP ${res.status}`);
     }
 
-    const data = await res.json();
+    const data = JSON.parse(text);
 
     // Mark items synced locally
     const allPrestarts = getOfflinePrestarts().map(p => ({ ...p, synced: true, syncedAt: data.syncedAt }));

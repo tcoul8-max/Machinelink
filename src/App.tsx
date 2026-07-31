@@ -17,14 +17,16 @@ export default function App() {
     const targetIp = getTailscaleIp();
     try {
       const wRes = await fetch(`/api/master/workers?ip=${encodeURIComponent(targetIp)}`);
-      if (wRes.ok) {
-        const wData = await wRes.json();
+      const wText = await wRes.text();
+      if (wRes.ok && !wText.trim().startsWith('<')) {
+        const wData = JSON.parse(wText);
         if (Array.isArray(wData) && wData.length > 0) setWorkers(wData);
       }
 
       const mRes = await fetch(`/api/master/machines?ip=${encodeURIComponent(targetIp)}`);
-      if (mRes.ok) {
-        const mData = await mRes.json();
+      const mText = await mRes.text();
+      if (mRes.ok && !mText.trim().startsWith('<')) {
+        const mData = JSON.parse(mText);
         if (Array.isArray(mData) && mData.length > 0) setMachines(mData);
       }
     } catch (e) {
