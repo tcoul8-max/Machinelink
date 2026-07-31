@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Wifi, WifiOff, RefreshCw, Server, ClipboardCheck, FileText, Database, History, Edit2, Download } from 'lucide-react';
 import { getTailscaleIp, getOfflinePrestarts, getOfflineDockets, attemptServerSync } from '../utils/offlineStore';
+import { smartFetchApi } from '../utils/apiClient';
 import { TailscaleIpModal } from './TailscaleIpModal';
 import { InstallPwaModal } from './InstallPwaModal';
 
@@ -30,61 +31,18 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
   const testServerConnection = async (ipToTest: string) => {
     setConnectionStatus(prev => ({ ...prev, isChecking: true }));
     try {
-      let isOnline = false;
-      let lastError = '';
-
-      // Step 1: Try proxy endpoint
-      try {
-        const res = await fetch(`/api/health-check?ip=${encodeURIComponent(ipToTest)}`);
-        const text = await res.text();
-        if (!text.trim().startsWith('<') && !text.includes('<html')) {
-          const data = JSON.parse(text);
-          if (res.ok && data.online) {
-            isOnline = true;
-          } else {
-            lastError = data.error || `Proxy HTTP ${res.status}`;
-          }
-        } else {
-          throw new Error('Static host detected (GitHub Pages /api proxy unavailable)');
-        }
-      } catch (proxyErr: any) {
-        lastError = proxyErr.message || 'Proxy error';
-
-        // Step 2: Try direct browser fetch to target IP
-        let targetUrl = ipToTest.trim();
-        if (!/^https?:\/\//i.test(targetUrl)) {
-          targetUrl = !targetUrl.includes(':') ? `http://${targetUrl}:3004` : `http://${targetUrl}`;
-        }
-        targetUrl = `${targetUrl.replace(/\/$/, '')}/api/server-info`;
-
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 3500);
-          const directRes = await fetch(targetUrl, { signal: controller.signal });
-          clearTimeout(timeoutId);
-
-          const directText = await directRes.text();
-          if (!directText.trim().startsWith('<') && !directText.includes('<html')) {
-            const directData = JSON.parse(directText);
-            if (directRes.ok && directData) {
-              isOnline = true;
-            }
-          }
-        } catch (directErr: any) {
-          lastError = `Unreachable (${directErr.message || 'Timed out'})`;
-        }
-      }
-
+      const { res, data } = await smartFetchApi('/api/server-info', {}, ipToTest);
+      const isOnline = res.ok && !!data;
       setConnectionStatus({
         isOnline,
         isChecking: false,
-        error: isOnline ? undefined : lastError
+        error: isOnline ? undefined : 'Unable to connect to Tailscale server node.'
       });
     } catch (e: any) {
       setConnectionStatus({
         isOnline: false,
         isChecking: false,
-        error: e.message || 'Connection failed'
+        error: e?.message || 'Server connection unreachable'
       });
     }
   };

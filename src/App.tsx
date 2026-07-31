@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Worker, Machine } from './types';
 import { INITIAL_WORKERS, INITIAL_MACHINES } from './data/defaultData';
 import { getTailscaleIp } from './utils/offlineStore';
+import { smartFetchApi } from './utils/apiClient';
 import { Header } from './components/Header';
 import { PrestartForm } from './components/PrestartForm';
 import { JobDocketForm } from './components/JobDocketForm';
@@ -16,19 +17,11 @@ export default function App() {
   const fetchMasterLists = async () => {
     const targetIp = getTailscaleIp();
     try {
-      const wRes = await fetch(`/api/master/workers?ip=${encodeURIComponent(targetIp)}`);
-      const wText = await wRes.text();
-      if (wRes.ok && !wText.trim().startsWith('<')) {
-        const wData = JSON.parse(wText);
-        if (Array.isArray(wData) && wData.length > 0) setWorkers(wData);
-      }
+      const { data: wData } = await smartFetchApi('/api/master/workers', {}, targetIp);
+      if (Array.isArray(wData) && wData.length > 0) setWorkers(wData);
 
-      const mRes = await fetch(`/api/master/machines?ip=${encodeURIComponent(targetIp)}`);
-      const mText = await mRes.text();
-      if (mRes.ok && !mText.trim().startsWith('<')) {
-        const mData = JSON.parse(mText);
-        if (Array.isArray(mData) && mData.length > 0) setMachines(mData);
-      }
+      const { data: mData } = await smartFetchApi('/api/master/machines', {}, targetIp);
+      if (Array.isArray(mData) && mData.length > 0) setMachines(mData);
     } catch (e) {
       console.log('Using local cached master lists (offline/initial startup)');
     }

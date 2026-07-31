@@ -1,4 +1,5 @@
 import { PrestartSubmission, JobDocket } from '../types';
+import { smartFetchApi } from './apiClient';
 
 const OFFLINE_PRESTARTS_KEY = 'apex_offline_prestarts_queue';
 const OFFLINE_DOCKETS_KEY = 'apex_offline_dockets_queue';
@@ -112,22 +113,15 @@ export async function attemptServerSync(): Promise<{
 
   try {
     const targetIp = getTailscaleIp();
-    const res = await fetch(`/api/sync?ip=${encodeURIComponent(targetIp)}`, {
+    const { res, data } = await smartFetchApi('/api/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prestarts, dockets, ip: targetIp }),
-    });
-
-    const text = await res.text();
-    if (text.trim().startsWith('<') || text.includes('<html')) {
-      throw new Error('Static host detected (/api proxy route returned HTML page on GitHub Pages)');
-    }
+    }, targetIp);
 
     if (!res.ok) {
-      throw new Error(`Server returned HTTP ${res.status}`);
+      throw new Error(data?.message || `Server returned HTTP ${res.status}`);
     }
-
-    const data = JSON.parse(text);
 
     // Mark items synced locally
     const allPrestarts = getOfflinePrestarts().map(p => ({ ...p, synced: true, syncedAt: data.syncedAt }));

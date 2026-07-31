@@ -4,6 +4,7 @@ import { DocketViewerModal } from './DocketViewerModal';
 import { TailscaleIpModal } from './TailscaleIpModal';
 import { generateDocketPDF } from '../utils/pdfGenerator';
 import { getTailscaleIp } from '../utils/offlineStore';
+import { smartFetchApi, buildDirectUrl } from '../utils/apiClient';
 import { Server, Database, FileSpreadsheet, Download, RefreshCw, Users, Truck, Plus, Check, Edit2, ShieldCheck, Wifi, Eye } from 'lucide-react';
 
 interface ServerTowerAdminProps {
@@ -50,25 +51,15 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
     setIsLoading(true);
     try {
       const currentIp = getTailscaleIp();
-      const ipParam = `?ip=${encodeURIComponent(currentIp)}`;
 
-      const res = await fetch(`/api/server-info${ipParam}`);
-      const text = await res.text();
-      if (res.ok && !text.trim().startsWith('<')) {
-        setServerInfo(JSON.parse(text));
-      }
+      const { data: infoData } = await smartFetchApi('/api/server-info', {}, currentIp);
+      if (infoData) setServerInfo(infoData);
 
-      const csvRes = await fetch(`/api/prestarts/csv-data${ipParam}`);
-      const csvText = await csvRes.text();
-      if (csvRes.ok && !csvText.trim().startsWith('<')) {
-        setCsvData(JSON.parse(csvText));
-      }
+      const { data: csv } = await smartFetchApi('/api/prestarts/csv-data', {}, currentIp);
+      if (csv) setCsvData(csv);
 
-      const docRes = await fetch(`/api/dockets${ipParam}`);
-      const docText = await docRes.text();
-      if (docRes.ok && !docText.trim().startsWith('<')) {
-        setServerDockets(JSON.parse(docText));
-      }
+      const { data: dockets } = await smartFetchApi('/api/dockets', {}, currentIp);
+      if (Array.isArray(dockets)) setServerDockets(dockets);
     } catch (e) {
       console.error('Failed to fetch server tower data', e);
     } finally {
@@ -96,11 +87,11 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
     };
 
     try {
-      await fetch(`/api/master/machines?ip=${encodeURIComponent(currentIp)}`, {
+      await smartFetchApi('/api/master/machines', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newMac, ip: currentIp }),
-      });
+      }, currentIp);
 
       setShowAddMachine(false);
       setNewUnitCode('');
@@ -126,11 +117,11 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
     };
 
     try {
-      await fetch(`/api/master/workers?ip=${encodeURIComponent(currentIp)}`, {
+      await smartFetchApi('/api/master/workers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newWorker, ip: currentIp }),
-      });
+      }, currentIp);
 
       setShowAddWorker(false);
       setNewWorkerName('');
@@ -182,7 +173,7 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
             </button>
 
             <a
-              href={`/api/reports/prestarts.csv?ip=${encodeURIComponent(getTailscaleIp())}`}
+              href={buildDirectUrl('/api/reports/prestarts.csv', getTailscaleIp())}
               download="prestarts_master.csv"
               className="px-4 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition flex items-center gap-2 shadow-md cursor-pointer"
             >
@@ -282,7 +273,7 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
             </div>
 
             <a
-              href={`/api/reports/prestarts.csv?ip=${encodeURIComponent(getTailscaleIp())}`}
+              href={buildDirectUrl('/api/reports/prestarts.csv', getTailscaleIp())}
               download="prestarts_master.csv"
               className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold hover:bg-emerald-500 transition flex items-center gap-2 cursor-pointer shadow-sm"
             >

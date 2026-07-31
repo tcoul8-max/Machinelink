@@ -3,6 +3,7 @@ import { Worker, Machine, JobDocket, DocketLineItem } from '../types';
 import { SignatureCanvas } from './SignatureCanvas';
 import { DrawingCanvasPad } from './DrawingCanvasPad';
 import { saveOfflineDocket, attemptServerSync, getTailscaleIp } from '../utils/offlineStore';
+import { smartFetchApi } from '../utils/apiClient';
 import { generateDocketPDF } from '../utils/pdfGenerator';
 import { FileText, Plus, Trash2, Download, Send, Eye, ShieldCheck, Check, DollarSign, Clock, Building, Edit3, Grid } from 'lucide-react';
 
@@ -66,9 +67,8 @@ export const JobDocketForm: React.FC<JobDocketFormProps> = ({ workers, machines,
   useEffect(() => {
     // Fetch unique sequential docket number from server tower
     const targetIp = getTailscaleIp();
-    fetch(`/api/dockets/next-number?ip=${encodeURIComponent(targetIp)}`)
-      .then(res => res.json())
-      .then(data => {
+    smartFetchApi('/api/dockets/next-number', {}, targetIp)
+      .then(({ data }) => {
         if (data && data.nextDocketNumber) {
           setDocketNumber(data.nextDocketNumber);
         }
