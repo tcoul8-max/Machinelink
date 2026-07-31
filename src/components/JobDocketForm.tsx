@@ -5,6 +5,7 @@ import { DrawingCanvasPad } from './DrawingCanvasPad';
 import { saveOfflineDocket, attemptServerSync, getTailscaleIp } from '../utils/offlineStore';
 import { smartFetchApi } from '../utils/apiClient';
 import { generateDocketPDF } from '../utils/pdfGenerator';
+import { getSavedDocketTemplate, saveSavedDocketTemplate } from '../data/defaultData';
 import { FileText, Plus, Trash2, Download, Send, Eye, ShieldCheck, Check, DollarSign, Clock, Building, Edit3, Grid } from 'lucide-react';
 
 interface JobDocketFormProps {
@@ -15,6 +16,7 @@ interface JobDocketFormProps {
 
 export const JobDocketForm: React.FC<JobDocketFormProps> = ({ workers, machines, onSubmissionComplete }) => {
   const [docketMode, setDocketMode] = useState<'paper' | 'structured'>('paper');
+  const [companyName, setCompanyName] = useState<string>(() => getSavedDocketTemplate().companyName);
   const [docketNumber, setDocketNumber] = useState<string>('0000');
   const [drawingDataUrl, setDrawingDataUrl] = useState<string>('');
   const [date, setDate] = useState<string>('');
@@ -64,6 +66,15 @@ export const JobDocketForm: React.FC<JobDocketFormProps> = ({ workers, machines,
         }
       })
       .catch(() => setDocketNumber('0000'));
+
+    smartFetchApi('/api/dockets/template', {}, targetIp)
+      .then(({ data }) => {
+        if (data && data.companyName) {
+          setCompanyName(data.companyName);
+          saveSavedDocketTemplate(data);
+        }
+      })
+      .catch(() => {});
 
     const todayStr = new Date().toLocaleDateString('en-AU', {
       day: '2-digit',
@@ -338,9 +349,20 @@ export const JobDocketForm: React.FC<JobDocketFormProps> = ({ workers, machines,
                     <h1 className="text-lg md:text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
                       DAILY JOB DOCKET
                     </h1>
-                    <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 tracking-wider">
-                      APEX CIVIL & MINING CONTRACTORS PTY LTD
-                    </p>
+                    <input
+                      type="text"
+                      value={companyName}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCompanyName(val);
+                        const tmpl = getSavedDocketTemplate();
+                        tmpl.companyName = val;
+                        saveSavedDocketTemplate(tmpl);
+                      }}
+                      placeholder="Enter Company Name"
+                      title="Click to edit company name"
+                      className="text-[11px] font-bold text-slate-700 dark:text-slate-300 tracking-wider bg-transparent border-b border-dashed border-slate-400 dark:border-slate-600 focus:outline-none focus:border-amber-500 w-full sm:w-80"
+                    />
                   </div>
                 </div>
 

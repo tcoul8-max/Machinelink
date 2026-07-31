@@ -137,3 +137,26 @@ export const DEFAULT_DOCKET_TEMPLATE: DocketTemplateConfig = {
   templateVersion: 'V2026.4 - Sever Tower Master Template',
   logoText: 'APEX CIVIL',
 };
+
+const DOCKET_TEMPLATE_KEY = 'apex_docket_template';
+
+export function getSavedDocketTemplate(): DocketTemplateConfig {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem(DOCKET_TEMPLATE_KEY);
+    if (saved) {
+      try {
+        return { ...DEFAULT_DOCKET_TEMPLATE, ...JSON.parse(saved) };
+      } catch (e) {
+        // fallback
+      }
+    }
+  }
+  return DEFAULT_DOCKET_TEMPLATE;
+}
+
+export function saveSavedDocketTemplate(config: DocketTemplateConfig): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(DOCKET_TEMPLATE_KEY, JSON.stringify(config));
+  }
+}
+

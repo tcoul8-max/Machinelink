@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Worker, Machine, JobDocket, PrestartType, PrestartSubmission } from '../types';
+import { Worker, Machine, JobDocket, PrestartType, PrestartSubmission, DocketTemplateConfig } from '../types';
 import { DocketViewerModal } from './DocketViewerModal';
 import { TailscaleIpModal } from './TailscaleIpModal';
 import { generateDocketPDF } from '../utils/pdfGenerator';
 import { getTailscaleIp, getOfflinePrestarts } from '../utils/offlineStore';
 import { smartFetchApi, buildDirectUrl } from '../utils/apiClient';
-import { Server, Database, FileSpreadsheet, Download, RefreshCw, Users, Truck, Plus, Check, Edit2, ShieldCheck, Wifi, Eye } from 'lucide-react';
+import { getSavedDocketTemplate, saveSavedDocketTemplate } from '../data/defaultData';
+import { Server, Database, FileSpreadsheet, Download, RefreshCw, Users, Truck, Plus, Check, Edit2, ShieldCheck, Wifi, Eye, Building2 } from 'lucide-react';
 
 interface ServerTowerAdminProps {
   workers: Worker[];
@@ -78,7 +79,7 @@ function convertSubmissionToCsvRow(p: PrestartSubmission): string[] {
 }
 
 export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, machines, onReloadMasterData }) => {
-  const [activeAdminSubtab, setActiveAdminSubtab] = useState<'csv' | 'machines' | 'workers' | 'dockets'>('csv');
+  const [activeAdminSubtab, setActiveAdminSubtab] = useState<'csv' | 'machines' | 'workers' | 'dockets' | 'branding'>('csv');
   const [serverIp, setServerIp] = useState<string>(getTailscaleIp());
   const [showIpModal, setShowIpModal] = useState<boolean>(false);
   
@@ -87,6 +88,9 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
   const [serverDockets, setServerDockets] = useState<JobDocket[]>([]);
   const [selectedInspectDocket, setSelectedInspectDocket] = useState<JobDocket | null>(null);
   
+  const [templateConfig, setTemplateConfig] = useState<DocketTemplateConfig>(() => getSavedDocketTemplate());
+  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   useEffect(() => {
@@ -177,11 +181,33 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
 
       const { data: dockets } = await smartFetchApi('/api/dockets', {}, currentIp);
       if (Array.isArray(dockets)) setServerDockets(dockets);
+
+      const { data: tmpl } = await smartFetchApi('/api/dockets/template', {}, currentIp);
+      if (tmpl && tmpl.companyName) {
+        setTemplateConfig(tmpl);
+        saveSavedDocketTemplate(tmpl);
+      }
     } catch (e) {
       console.error('Failed to fetch server tower data', e);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSaveTemplate = async () => {
+    saveSavedDocketTemplate(templateConfig);
+    try {
+      const currentIp = getTailscaleIp();
+      await smartFetchApi('/api/dockets/template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(templateConfig),
+      }, currentIp);
+    } catch (e) {
+      console.warn('Saved template locally:', e);
+    }
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
   };
 
   useEffect(() => {
@@ -372,6 +398,18 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
         >
           <Database className="w-4 h-4" />
           Server Dockets ({serverDockets.length})
+        </button>
+
+        <button
+          onClick={() => setActiveAdminSubtab('branding')}
+          className={`pb-3.5 px-5 text-xs font-black transition border-b-2 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeAdminSubtab === 'branding'
+              ? 'border-amber-500 text-amber-500'
+              : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+        >
+          <Building2 className="w-4 h-4 text-amber-500" />
+          Company Branding & Details
         </button>
       </div>
 
@@ -725,6 +763,117 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
                 No job dockets submitted to server tower yet.
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Subtab 5: Company Branding & Details */}
+      {activeAdminSubtab === 'branding' && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 md:p-8 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div>
+              <h3 className="font-black text-base text-slate-900 dark:text-white flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-amber-500" />
+                Company Branding & Docket Headers
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Edit your company name, ABN, and contact information used across Daily Job Dockets and PDF exports.
+              </p>
+            </div>
+            {saveSuccess && (
+              <span className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-black flex items-center gap-1.5 animate-fade-in">
+                <Check className="w-4 h-4" /> Company Details Saved & Synced!
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400">
+                Company Legal Name
+              </label>
+              <input
+                type="text"
+                value={templateConfig.companyName}
+                onChange={e => setTemplateConfig({ ...templateConfig, companyName: e.target.value })}
+                placeholder="e.g. YOUR COMPANY NAME PTY LTD"
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400">
+                App / Header Short Name
+              </label>
+              <input
+                type="text"
+                value={templateConfig.logoText}
+                onChange={e => setTemplateConfig({ ...templateConfig, logoText: e.target.value })}
+                placeholder="e.g. APEX CIVIL or MY CONTRACTING"
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400">
+                ABN / Registration Number
+              </label>
+              <input
+                type="text"
+                value={templateConfig.companyAbn}
+                onChange={e => setTemplateConfig({ ...templateConfig, companyAbn: e.target.value })}
+                placeholder="e.g. ABN: 00 000 000 000"
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400">
+                Business Address
+              </label>
+              <input
+                type="text"
+                value={templateConfig.companyAddress}
+                onChange={e => setTemplateConfig({ ...templateConfig, companyAddress: e.target.value })}
+                placeholder="e.g. 100 Field Depot Way, Perth WA 6000"
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400">
+                Contact Phone
+              </label>
+              <input
+                type="text"
+                value={templateConfig.companyPhone}
+                onChange={e => setTemplateConfig({ ...templateConfig, companyPhone: e.target.value })}
+                placeholder="e.g. (08) 9000 1122"
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold uppercase text-slate-600 dark:text-slate-400">
+                Contact Email
+              </label>
+              <input
+                type="email"
+                value={templateConfig.companyEmail}
+                onChange={e => setTemplateConfig({ ...templateConfig, companyEmail: e.target.value })}
+                placeholder="e.g. dockets@mycompany.com.au"
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+          </div>
+
+          <div className="pt-4 flex justify-end">
+            <button
+              onClick={handleSaveTemplate}
+              className="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider transition flex items-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer"
+            >
+              <Check className="w-4 h-4 stroke-[3]" /> Save Company Branding Settings
+            </button>
           </div>
         </div>
       )}

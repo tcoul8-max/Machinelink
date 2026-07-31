@@ -1,8 +1,8 @@
 import { jsPDF } from 'jspdf';
 import { JobDocket, DocketTemplateConfig } from '../types';
-import { DEFAULT_DOCKET_TEMPLATE } from '../data/defaultData';
+import { getSavedDocketTemplate } from '../data/defaultData';
 
-export function generateDocketPDF(docket: JobDocket, config: DocketTemplateConfig = DEFAULT_DOCKET_TEMPLATE): jsPDF {
+export function generateDocketPDF(docket: JobDocket, config: DocketTemplateConfig = getSavedDocketTemplate()): jsPDF {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',

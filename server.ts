@@ -31,6 +31,22 @@ const PRESTARTS_CSV_PATH = path.join(STORAGE_DIR, 'prestarts.csv');
 const WORKERS_JSON_PATH = path.join(STORAGE_DIR, 'workers.json');
 const MACHINES_JSON_PATH = path.join(STORAGE_DIR, 'machines.json');
 const DOCKETS_JSON_PATH = path.join(STORAGE_DIR, 'dockets.json');
+const TEMPLATE_JSON_PATH = path.join(STORAGE_DIR, 'docket_template.json');
+
+function getDocketTemplate() {
+  if (fs.existsSync(TEMPLATE_JSON_PATH)) {
+    try {
+      return JSON.parse(fs.readFileSync(TEMPLATE_JSON_PATH, 'utf-8'));
+    } catch (e) {
+      // fallback
+    }
+  }
+  return DEFAULT_DOCKET_TEMPLATE;
+}
+
+function saveDocketTemplate(template: any) {
+  fs.writeFileSync(TEMPLATE_JSON_PATH, JSON.stringify(template, null, 2));
+}
 
 function parseCsvLine(line: string): string[] {
   const result: string[] = [];
@@ -700,7 +716,14 @@ app.get('/api/dockets', async (req, res) => {
 });
 
 app.get('/api/dockets/template', (req, res) => {
-  res.json(DEFAULT_DOCKET_TEMPLATE);
+  res.json(getDocketTemplate());
+});
+
+app.post('/api/dockets/template', (req, res) => {
+  const current = getDocketTemplate();
+  const updated = { ...current, ...req.body };
+  saveDocketTemplate(updated);
+  res.json(updated);
 });
 
 // Batch sync endpoint for offline queue
