@@ -15,7 +15,7 @@ interface JobDocketFormProps {
 
 export const JobDocketForm: React.FC<JobDocketFormProps> = ({ workers, machines, onSubmissionComplete }) => {
   const [docketMode, setDocketMode] = useState<'paper' | 'structured'>('paper');
-  const [docketNumber, setDocketNumber] = useState<string>('8183');
+  const [docketNumber, setDocketNumber] = useState<string>('0000');
   const [drawingDataUrl, setDrawingDataUrl] = useState<string>('');
   const [date, setDate] = useState<string>('');
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
@@ -59,11 +59,11 @@ export const JobDocketForm: React.FC<JobDocketFormProps> = ({ workers, machines,
     const targetIp = getTailscaleIp();
     smartFetchApi('/api/dockets/next-number', {}, targetIp)
       .then(({ data }) => {
-        if (data && data.nextDocketNumber) {
-          setDocketNumber(data.nextDocketNumber);
+        if (data && data.nextDocketNumber !== undefined) {
+          setDocketNumber(String(data.nextDocketNumber).padStart(4, '0'));
         }
       })
-      .catch(() => setDocketNumber('8183'));
+      .catch(() => setDocketNumber('0000'));
 
     const todayStr = new Date().toLocaleDateString('en-AU', {
       day: '2-digit',
@@ -75,9 +75,8 @@ export const JobDocketForm: React.FC<JobDocketFormProps> = ({ workers, machines,
     if (workers.length > 0 && !selectedWorkerId) setSelectedWorkerId(workers[0].id);
     if (machines.length > 0 && !selectedMachineId) {
       setSelectedMachineId(machines[0].id);
-      const mac = machines[0];
-      setStartHours(mac.currentHours);
-      setEndHours(mac.currentHours + 8.5);
+      setStartHours(0);
+      setEndHours(0);
     }
   }, [workers, machines]);
 

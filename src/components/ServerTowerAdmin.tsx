@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Worker, Machine, JobDocket, PrestartType } from '../types';
+import { Worker, Machine, JobDocket, PrestartType, PrestartSubmission } from '../types';
 import { DocketViewerModal } from './DocketViewerModal';
 import { TailscaleIpModal } from './TailscaleIpModal';
 import { generateDocketPDF } from '../utils/pdfGenerator';
-import { getTailscaleIp } from '../utils/offlineStore';
+import { getTailscaleIp, getOfflinePrestarts } from '../utils/offlineStore';
 import { smartFetchApi, buildDirectUrl } from '../utils/apiClient';
 import { Server, Database, FileSpreadsheet, Download, RefreshCw, Users, Truck, Plus, Check, Edit2, ShieldCheck, Wifi, Eye } from 'lucide-react';
 
@@ -36,6 +36,45 @@ function parseCsvLine(line: string): string[] {
   }
   result.push(current.trim());
   return result;
+}
+
+function convertSubmissionToCsvRow(p: PrestartSubmission): string[] {
+  const getStatus = (itemId: string) => {
+    if (!p.checks || !p.checks[itemId]) return 'N/A';
+    const c = p.checks[itemId];
+    return c.notes ? `${c.status} (${c.notes})` : c.status;
+  };
+
+  return [
+    p.id || 'PRE-' + Date.now().toString().slice(-4),
+    p.syncedAt || new Date().toISOString(),
+    p.date || new Date().toLocaleDateString('en-AU'),
+    p.workerName || 'Operator',
+    p.machineCode || 'N/A',
+    p.machineName || 'N/A',
+    `Type ${p.prestartType || 1}`,
+    String(p.engineHours || 0),
+    p.overallStatus || 'SAFE_TO_OPERATE',
+    getStatus('engine_oil'),
+    getStatus('hydraulic_oil'),
+    getStatus('coolant'),
+    getStatus('transmission_oil') !== 'N/A' ? getStatus('transmission_oil') : getStatus('final_drive_oil'),
+    getStatus('fuel_level'),
+    getStatus('tracks') !== 'N/A' ? getStatus('tracks') : getStatus('undercarriage'),
+    getStatus('tires'),
+    getStatus('steering'),
+    getStatus('brakes'),
+    getStatus('air_cleaner'),
+    getStatus('attachment_bucket'),
+    getStatus('lights_beacons'),
+    getStatus('seatbelt'),
+    getStatus('mirrors_glass'),
+    getStatus('fire_extinguisher'),
+    getStatus('horn_beeper'),
+    getStatus('controls_estop'),
+    p.generalNotes || '',
+    p.signatureDataUrl ? 'YES' : 'NO'
+  ];
 }
 
 export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, machines, onReloadMasterData }) => {
@@ -80,10 +119,16 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
       const { data: infoData } = await smartFetchApi('/api/server-info', {}, currentIp);
       if (infoData) setServerInfo(infoData);
 
+      let fetchedHeaders: string[] = [];
+      let fetchedRows: string[][] = [];
+      let rawTextContent = '';
+
       try {
         const { data: csv } = await smartFetchApi('/api/prestarts/csv-data', {}, currentIp);
         if (csv && csv.headers && csv.rows && csv.rows.length > 0) {
-          setCsvData(csv);
+          fetchedHeaders = csv.headers;
+          fetchedRows = csv.rows;
+          rawTextContent = csv.rawContent || '';
         } else {
           // Direct fallback: fetch raw CSV and parse
           const directCsvUrl = buildDirectUrl('/api/reports/prestarts.csv', currentIp);
@@ -93,9 +138,9 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
             if (rawText && !rawText.trim().startsWith('<')) {
               const lines = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim().length > 0);
               if (lines.length > 0) {
-                const headers = parseCsvLine(lines[0]);
-                const rows = lines.slice(1).map(l => parseCsvLine(l));
-                setCsvData({ headers, rows, rawContent: rawText });
+                fetchedHeaders = parseCsvLine(lines[0]);
+                fetchedRows = lines.slice(1).map(l => parseCsvLine(l));
+                rawTextContent = rawText;
               }
             }
           }
@@ -103,6 +148,32 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
       } catch (csvErr) {
         console.warn('Error fetching CSV data:', csvErr);
       }
+
+      const defaultHeaders = [
+        'Submission_ID', 'Timestamp', 'Date', 'Worker_Name', 'Machine_Code', 'Machine_Name',
+        'Prestart_Type', 'Engine_Hours', 'Overall_Status', 'Engine_Oil', 'Hydraulic_Oil',
+        'Coolant', 'Transmission_Drive_Oil', 'Fuel_Water_Trap', 'Tracks_Undercarriage',
+        'Tires_Wheel_Nuts', 'Steering_Linkages', 'Brakes_Park_Brake', 'Air_Cleaner',
+        'Bucket_Pins_Attachment', 'Lights_Beacons', 'Seatbelt', 'Mirrors_Glass',
+        'Fire_Extinguisher', 'Horn_Reverse_Alarm', 'Controls_EStop', 'General_Notes',
+        'Operator_Signature_Attached'
+      ];
+
+      const headers = fetchedHeaders.length > 0 ? fetchedHeaders : defaultHeaders;
+      const rows = [...fetchedRows];
+
+      // Merge local offline prestarts if any exist that aren't already in fetched rows
+      const offlinePrestarts = getOfflinePrestarts();
+      if (offlinePrestarts.length > 0) {
+        const existingIds = new Set(rows.map(r => r[0]));
+        for (const offP of offlinePrestarts) {
+          if (!existingIds.has(offP.id)) {
+            rows.unshift(convertSubmissionToCsvRow(offP));
+          }
+        }
+      }
+
+      setCsvData({ headers, rows, rawContent: rawTextContent });
 
       const { data: dockets } = await smartFetchApi('/api/dockets', {}, currentIp);
       if (Array.isArray(dockets)) setServerDockets(dockets);

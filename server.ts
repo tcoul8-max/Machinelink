@@ -100,8 +100,14 @@ const CSV_HEADER = [
   'Operator_Signature_Attached'
 ].join(',') + '\n';
 
-if (!fs.existsSync(PRESTARTS_CSV_PATH)) {
-  fs.writeFileSync(PRESTARTS_CSV_PATH, CSV_HEADER);
+const INITIAL_PRESTART_ROWS = [
+  'PRE-2026-001,2026-07-30T06:15:00.000Z,30/07/2026,"John Miller",EX-01,"Caterpillar 320 Excavator (Tracked)",Type 2,1425.5,SAFE_TO_OPERATE,PASS,PASS,PASS,N/A,PASS,PASS,N/A,N/A,PASS,PASS,PASS,PASS,PASS,PASS,PASS,PASS,PASS,"Prestart inspection complete. Machine clean and operational.",YES',
+  'PRE-2026-002,2026-07-30T06:30:00.000Z,30/07/2026,"Dave Wilson",DZ-04,"Komatsu D65EX Dozer (Tracked)",Type 2,3102.8,SAFE_TO_OPERATE,PASS,PASS,PASS,N/A,PASS,PASS,N/A,N/A,PASS,PASS,PASS,PASS,PASS,PASS,PASS,PASS,PASS,"Blade grease points serviced.",YES',
+  'PRE-2026-003,2026-07-30T07:00:00.000Z,30/07/2026,"Sarah Jenkins",WL-08,"Volvo L150H Wheel Loader",Type 1,2150.2,DEFECT_REPORTED,PASS,PASS,PASS,PASS,PASS,N/A,PASS (Minor wear on LHS front),PASS,PASS,PASS,PASS,PASS,PASS,PASS,PASS,PASS,PASS,"Minor tire wear noticed on LHS front. Reported to supervisor.",YES'
+].join('\n') + '\n';
+
+if (!fs.existsSync(PRESTARTS_CSV_PATH) || fs.readFileSync(PRESTARTS_CSV_PATH, 'utf-8').trim().split('\n').length <= 1) {
+  fs.writeFileSync(PRESTARTS_CSV_PATH, CSV_HEADER + INITIAL_PRESTART_ROWS);
 }
 
 // Helper functions to parse CSV files if present in machinelink or server_storage
@@ -277,7 +283,7 @@ function appendPrestartToCSV(sub: any) {
 
 function getNextDocketNumber(): string {
   const dockets = getDockets();
-  let maxNum = 8182; // Default starting sequence before 8183
+  let maxNum = -1; // Default sequence starts at 0000
   for (const doc of dockets) {
     if (doc.docketNumber) {
       const match = doc.docketNumber.match(/\d+/);
@@ -289,7 +295,7 @@ function getNextDocketNumber(): string {
       }
     }
   }
-  return String(maxNum + 1);
+  return String(maxNum + 1).padStart(4, '0');
 }
 
 function formatTargetUrl(ip: string): string {
