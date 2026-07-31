@@ -32,6 +32,31 @@ const WORKERS_JSON_PATH = path.join(STORAGE_DIR, 'workers.json');
 const MACHINES_JSON_PATH = path.join(STORAGE_DIR, 'machines.json');
 const DOCKETS_JSON_PATH = path.join(STORAGE_DIR, 'dockets.json');
 
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else if (char !== '\r') {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
 // Initialize Master Lists if not created
 if (!fs.existsSync(WORKERS_JSON_PATH)) {
   fs.writeFileSync(WORKERS_JSON_PATH, JSON.stringify(INITIAL_WORKERS, null, 2));
@@ -566,8 +591,18 @@ app.get('/api/reports/prestarts.csv', async (req, res) => {
 
 // View CSV content as JSON for the server tower dashboard
 app.get('/api/prestarts/csv-data', async (req, res) => {
+  let content = '';
+
+  if (fs.existsSync(PRESTARTS_CSV_PATH)) {
+    try {
+      content = fs.readFileSync(PRESTARTS_CSV_PATH, 'utf-8');
+    } catch (e) {
+      console.error('Error reading PRESTARTS_CSV_PATH:', e);
+    }
+  }
+
   const targetIp = (req.query.ip as string || '').trim();
-  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+  if (!content && targetIp && targetIp !== '3000' && targetIp !== 'local') {
     const targetUrl = formatTargetUrl(targetIp);
     try {
       const controller = new AbortController();
@@ -575,26 +610,24 @@ app.get('/api/prestarts/csv-data', async (req, res) => {
       const r = await fetch(`${targetUrl}/api/reports/prestarts.csv`, { signal: controller.signal });
       clearTimeout(timeoutId);
       if (r.ok) {
-        const content = await r.text();
-        const lines = content.trim().split('\n');
-        if (lines.length > 0) {
-          const headers = lines[0].split(',');
-          const rows = lines.slice(1).map(l => l.split(','));
-          return res.json({ headers, rows, rawContent: content });
-        }
+        content = await r.text();
       }
     } catch (e) {
       // Fallback
     }
   }
 
-  const content = fs.readFileSync(PRESTARTS_CSV_PATH, 'utf-8');
-  const lines = content.trim().split('\n');
-  if (lines.length === 0) {
-    return res.json({ headers: [], rows: [] });
+  if (!content || !content.trim()) {
+    return res.json({ headers: [], rows: [], rawContent: '' });
   }
-  const headers = lines[0].split(',');
-  const rows = lines.slice(1).map(l => l.split(','));
+
+  const rawLines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim().length > 0);
+  if (rawLines.length === 0) {
+    return res.json({ headers: [], rows: [], rawContent: content });
+  }
+
+  const headers = parseCsvLine(rawLines[0]);
+  const rows = rawLines.slice(1).map(l => parseCsvLine(l));
   res.json({ headers, rows, rawContent: content });
 });
 

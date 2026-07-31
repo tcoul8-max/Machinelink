@@ -21,44 +21,34 @@ export const JobDocketForm: React.FC<JobDocketFormProps> = ({ workers, machines,
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
   const [selectedMachineId, setSelectedMachineId] = useState<string>('');
   
-  const [clientName, setClientName] = useState<string>('Rio Tinto Projects');
-  const [jobSite, setJobSite] = useState<string>('Gudai-Darri Site B - Pit Expansion');
-  const [poNumber, setPoNumber] = useState<string>('PO-88192-CIVIL');
+  const [clientName, setClientName] = useState<string>('');
+  const [jobSite, setJobSite] = useState<string>('');
+  const [poNumber, setPoNumber] = useState<string>('');
   
-  const [startTime, setStartTime] = useState<string>('06:30 AM');
-  const [breakHours, setBreakHours] = useState<number>(0.5);
-  const [finishTime, setFinishTime] = useState<string>('05:00 PM');
+  const [startTime, setStartTime] = useState<string>('');
+  const [breakHours, setBreakHours] = useState<number>(0);
+  const [finishTime, setFinishTime] = useState<string>('');
 
   const [startHours, setStartHours] = useState<number>(0);
   const [endHours, setEndHours] = useState<number>(0);
-  const [loadCount, setLoadCount] = useState<number>(42);
+  const [loadCount, setLoadCount] = useState<number>(0);
 
   const [lineItems, setLineItems] = useState<DocketLineItem[]>([
     {
       id: 'li_1',
-      description: 'CAT 320 Excavator Operation (Trenching & Bulk Earthworks)',
+      description: '',
       itemType: 'Machine Hours',
-      qtyOrHours: 8.5,
-      unitRate: 165.0,
-      totalAmount: 1402.5,
-    },
-    {
-      id: 'li_2',
-      description: 'Hydraulic Rock Breaker Attachment Charge',
-      itemType: 'Attachment',
-      qtyOrHours: 3.0,
-      unitRate: 45.0,
-      totalAmount: 135.0,
+      qtyOrHours: 0,
+      unitRate: 0,
+      totalAmount: 0,
     }
   ]);
 
-  const [generalNotes, setGeneralNotes] = useState<string>(
-    'Completed 120m trenching for pipeline laying. Installed benching along northern batters.'
-  );
+  const [generalNotes, setGeneralNotes] = useState<string>('');
 
   const [operatorSignature, setOperatorSignature] = useState<string>('');
   const [clientSignature, setClientSignature] = useState<string>('');
-  const [clientSignerName, setClientSignerName] = useState<string>('Mark Vance (Site Engineer)');
+  const [clientSignerName, setClientSignerName] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submittedDocket, setSubmittedDocket] = useState<JobDocket | null>(null);
@@ -122,11 +112,11 @@ export const JobDocketForm: React.FC<JobDocketFormProps> = ({ workers, machines,
   const addLineItem = () => {
     const newItem: DocketLineItem = {
       id: 'li_' + Date.now(),
-      description: 'General Machine Service / Standby',
+      description: '',
       itemType: 'Machine Hours',
-      qtyOrHours: 1,
-      unitRate: 150,
-      totalAmount: 150,
+      qtyOrHours: 0,
+      unitRate: 0,
+      totalAmount: 0,
     };
     setLineItems(prev => [...prev, newItem]);
   };

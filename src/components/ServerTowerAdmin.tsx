@@ -13,6 +13,31 @@ interface ServerTowerAdminProps {
   onReloadMasterData: () => void;
 }
 
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else if (char !== '\r') {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
 export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, machines, onReloadMasterData }) => {
   const [activeAdminSubtab, setActiveAdminSubtab] = useState<'csv' | 'machines' | 'workers' | 'dockets'>('csv');
   const [serverIp, setServerIp] = useState<string>(getTailscaleIp());
@@ -55,8 +80,29 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
       const { data: infoData } = await smartFetchApi('/api/server-info', {}, currentIp);
       if (infoData) setServerInfo(infoData);
 
-      const { data: csv } = await smartFetchApi('/api/prestarts/csv-data', {}, currentIp);
-      if (csv) setCsvData(csv);
+      try {
+        const { data: csv } = await smartFetchApi('/api/prestarts/csv-data', {}, currentIp);
+        if (csv && csv.headers && csv.rows && csv.rows.length > 0) {
+          setCsvData(csv);
+        } else {
+          // Direct fallback: fetch raw CSV and parse
+          const directCsvUrl = buildDirectUrl('/api/reports/prestarts.csv', currentIp);
+          const rawRes = await fetch(directCsvUrl);
+          if (rawRes.ok) {
+            const rawText = await rawRes.text();
+            if (rawText && !rawText.trim().startsWith('<')) {
+              const lines = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim().length > 0);
+              if (lines.length > 0) {
+                const headers = parseCsvLine(lines[0]);
+                const rows = lines.slice(1).map(l => parseCsvLine(l));
+                setCsvData({ headers, rows, rawContent: rawText });
+              }
+            }
+          }
+        }
+      } catch (csvErr) {
+        console.warn('Error fetching CSV data:', csvErr);
+      }
 
       const { data: dockets } = await smartFetchApi('/api/dockets', {}, currentIp);
       if (Array.isArray(dockets)) setServerDockets(dockets);
@@ -218,7 +264,7 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
           }`}
         >
           <FileSpreadsheet className="w-4 h-4" />
-          Server prestarts.csv Viewer
+          Server prestarts.csv Viewer ({csvData?.rows?.length || 0})
         </button>
 
         <button
@@ -265,20 +311,30 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
             <div>
               <h3 className="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
-                Live prestarts.csv File on Tailscale Server Tower
+                Live prestarts.csv File ({csvData?.rows?.length || 0} Entries Logged)
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                All prestarts submitted by operators are stored in a standard CSV format on the server. Non-applicable fields for tracked or wheeled equipment are formatted as N/A.
+                All prestarts submitted by operators are stored in standard CSV format on the server.
               </p>
             </div>
 
-            <a
-              href={buildDirectUrl('/api/reports/prestarts.csv', getTailscaleIp())}
-              download="prestarts_master.csv"
-              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold hover:bg-emerald-500 transition flex items-center gap-2 cursor-pointer shadow-sm"
-            >
-              <Download className="w-3.5 h-3.5" /> Direct Export CSV
-            </a>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={fetchServerInfo}
+                disabled={isLoading}
+                className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> Refresh CSV
+              </button>
+
+              <a
+                href={buildDirectUrl('/api/reports/prestarts.csv', getTailscaleIp())}
+                download="prestarts_master.csv"
+                className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold hover:bg-emerald-500 transition flex items-center gap-2 cursor-pointer shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" /> Direct Export CSV
+              </a>
+            </div>
           </div>
 
           <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-2xl max-h-96">

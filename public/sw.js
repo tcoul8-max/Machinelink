@@ -1,16 +1,19 @@
 // Service Worker for Offline PWA Capabilities
-const CACHE_NAME = 'prestart-dockets-v1';
+const CACHE_NAME = 'prestart-dockets-v2';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json'
+  './',
+  './index.html',
+  './manifest.json',
+  './icon.svg'
 ];
 
-// Install Event - Pre-cache core shell
+// Install Event - Pre-cache core shell robustly
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      return Promise.allSettled(
+        ASSETS_TO_CACHE.map(asset => cache.add(asset).catch(e => console.warn('PWA Pre-cache skipped asset:', asset, e)))
+      );
     }).then(() => self.skipWaiting())
   );
 });
@@ -28,12 +31,12 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event - Stale-While-Revalidate for app assets, bypass or fallback for API
+// Fetch Event - Stale-While-Revalidate for app assets, bypass for API
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Skip API requests from SW cache (API handled by offline store / IndexedDB)
-  if (url.pathname.startsWith('/api/')) {
+  // Skip non-GET requests and backend API requests
+  if (event.request.method !== 'GET' || url.pathname.includes('/api/')) {
     return;
   }
 
@@ -53,10 +56,7 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => {
-          // Return cached response if offline
-          return cachedResponse;
-        });
+        .catch(() => cachedResponse);
 
       return cachedResponse || fetchPromise;
     })

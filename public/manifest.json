@@ -1,28 +1,32 @@
 {
   "short_name": "Prestart & Docket",
   "name": "Machinery Prestart & Daily Job Docket",
-  "icons": [
-    {
-      "src": "/icon.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icon.svg",
-      "type": "image/svg+xml",
-      "sizes": "192x192"
-    },
-    {
-      "src": "/icon.svg",
-      "type": "image/svg+xml",
-      "sizes": "512x512"
-    }
-  ],
-  "start_url": "/",
+  "id": "machinelink-prestart-dockets",
+  "start_url": "./",
+  "scope": "./",
   "background_color": "#0f172a",
   "theme_color": "#f59e0b",
   "display": "standalone",
   "orientation": "portrait",
-  "description": "Offline-first Machinery Safety Prestart Inspection and Daily Job Docket Pad for Civil & Mining Contractors."
+  "description": "Offline-first Machinery Safety Prestart Inspection and Daily Job Docket Pad for Civil & Mining Contractors.",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
 }

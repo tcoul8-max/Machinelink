@@ -120,7 +120,7 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
     // Check if all items answered
     const unanswered = currentCheckItems.filter(item => !checks[item.id]);
     if (unanswered.length > 0) {
-      setFormError(`Please complete all checklist items (${unanswered.length} items remaining). Or click 'Mark All PASS' if verified.`);
+      setFormError(`Please complete all checklist items (${unanswered.length} items remaining).`);
       return;
     }
 
@@ -182,15 +182,6 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
             Complete before operating plant equipment. Safety checks load automatically for the selected machine.
           </p>
         </div>
-
-        <button
-          type="button"
-          onClick={setAllItemsPass}
-          className="self-start md:self-center inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-500/20 hover:bg-emerald-500/20 transition shadow-sm cursor-pointer"
-        >
-          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-          Mark All PASS
-        </button>
       </div>
 
       {formError && (
