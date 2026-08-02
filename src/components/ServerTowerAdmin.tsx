@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Worker, Machine, JobDocket, PrestartType, PrestartSubmission, DocketTemplateConfig } from '../types';
+import { Worker, Machine, JobDocket, PrestartType, PrestartSubmission, DocketTemplateConfig, PrestartTemplateStore, CheckItemDefinition, PrestartTypeDefinition } from '../types';
 import { DocketViewerModal } from './DocketViewerModal';
 import { TailscaleIpModal } from './TailscaleIpModal';
 import { generateDocketPDF } from '../utils/pdfGenerator';
 import { getTailscaleIp, getOfflinePrestarts } from '../utils/offlineStore';
 import { smartFetchApi, buildDirectUrl } from '../utils/apiClient';
-import { getSavedDocketTemplate, saveSavedDocketTemplate } from '../data/defaultData';
-import { Server, Database, FileSpreadsheet, Download, RefreshCw, Users, Truck, Plus, Check, Edit2, ShieldCheck, Wifi, Eye, Building2 } from 'lucide-react';
+import { getSavedDocketTemplate, saveSavedDocketTemplate, getSavedPrestartTemplates, saveSavedPrestartTemplates } from '../data/defaultData';
+import { Server, Database, FileSpreadsheet, Download, RefreshCw, Users, Truck, Plus, Check, Edit2, ShieldCheck, Wifi, Eye, Building2, Sliders, CheckSquare, Square, Search, Trash2, Sparkles, Layers, ListChecks } from 'lucide-react';
 
 interface ServerTowerAdminProps {
   workers: Worker[];
@@ -79,7 +79,7 @@ function convertSubmissionToCsvRow(p: PrestartSubmission): string[] {
 }
 
 export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, machines, onReloadMasterData }) => {
-  const [activeAdminSubtab, setActiveAdminSubtab] = useState<'csv' | 'machines' | 'workers' | 'dockets' | 'branding'>('csv');
+  const [activeAdminSubtab, setActiveAdminSubtab] = useState<'csv' | 'prestart_templates' | 'machines' | 'workers' | 'dockets' | 'branding'>('csv');
   const [serverIp, setServerIp] = useState<string>(getTailscaleIp());
   const [showIpModal, setShowIpModal] = useState<boolean>(false);
   
@@ -90,6 +90,24 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
   
   const [templateConfig, setTemplateConfig] = useState<DocketTemplateConfig>(() => getSavedDocketTemplate());
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+
+  // Prestart Templates & Questions Manager State
+  const [templateStore, setTemplateStore] = useState<PrestartTemplateStore>(() => getSavedPrestartTemplates());
+  const [selectedPrestartTypeId, setSelectedPrestartTypeId] = useState<number>(1);
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [questionSearchQuery, setQuestionSearchQuery] = useState<string>('');
+  const [prestartSaveSuccess, setPrestartSaveSuccess] = useState<boolean>(false);
+
+  // Add Prestart Type Modal
+  const [showAddPrestartTypeModal, setShowAddPrestartTypeModal] = useState<boolean>(false);
+  const [newTypeName, setNewTypeName] = useState<string>('');
+  const [newTypeDesc, setNewTypeDesc] = useState<string>('');
+
+  // Add Custom Question Modal
+  const [showAddQuestionModal, setShowAddQuestionModal] = useState<boolean>(false);
+  const [newQCategory, setNewQCategory] = useState<'Fluid Levels' | 'Ground & Mechanical' | 'Cab & Safety' | 'Operational Checks' | 'Special & Rigging'>('Fluid Levels');
+  const [newQLabel, setNewQLabel] = useState<string>('');
+  const [newQDesc, setNewQDesc] = useState<string>('');
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -187,6 +205,12 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
         setTemplateConfig(tmpl);
         saveSavedDocketTemplate(tmpl);
       }
+
+      const { data: prestartStore } = await smartFetchApi('/api/prestart-templates', {}, currentIp);
+      if (prestartStore && prestartStore.types && prestartStore.questions) {
+        setTemplateStore(prestartStore);
+        saveSavedPrestartTemplates(prestartStore);
+      }
     } catch (e) {
       console.error('Failed to fetch server tower data', e);
     } finally {
@@ -208,6 +232,137 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
     }
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
+  const handleSavePrestartTemplates = async (updatedStore?: PrestartTemplateStore) => {
+    const storeToSave = updatedStore || templateStore;
+    saveSavedPrestartTemplates(storeToSave);
+    try {
+      const currentIp = getTailscaleIp();
+      await smartFetchApi('/api/prestart-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(storeToSave),
+      }, currentIp);
+    } catch (e) {
+      console.warn('Saved prestart template locally:', e);
+    }
+    setPrestartSaveSuccess(true);
+    setTimeout(() => setPrestartSaveSuccess(false), 3000);
+  };
+
+  const handleToggleQuestion = (questionId: string) => {
+    const currentAssignments = templateStore.assignments[selectedPrestartTypeId] || [];
+    const isCurrentlyActive = currentAssignments.includes(questionId);
+    let updatedAssignments: string[];
+
+    if (isCurrentlyActive) {
+      updatedAssignments = currentAssignments.filter(id => id !== questionId);
+    } else {
+      updatedAssignments = [...currentAssignments, questionId];
+    }
+
+    const newStore: PrestartTemplateStore = {
+      ...templateStore,
+      assignments: {
+        ...templateStore.assignments,
+        [selectedPrestartTypeId]: updatedAssignments,
+      }
+    };
+
+    setTemplateStore(newStore);
+    handleSavePrestartTemplates(newStore);
+  };
+
+  const handleToggleCategory = (categoryName: string, enable: boolean) => {
+    const currentAssignments = templateStore.assignments[selectedPrestartTypeId] || [];
+    const categoryQuestionIds = templateStore.questions
+      .filter(q => q.category === categoryName)
+      .map(q => q.id);
+
+    let updatedAssignments: string[];
+    if (enable) {
+      // Add all category items that aren't already included
+      const toAdd = categoryQuestionIds.filter(id => !currentAssignments.includes(id));
+      updatedAssignments = [...currentAssignments, ...toAdd];
+    } else {
+      // Remove all category items
+      updatedAssignments = currentAssignments.filter(id => !categoryQuestionIds.includes(id));
+    }
+
+    const newStore: PrestartTemplateStore = {
+      ...templateStore,
+      assignments: {
+        ...templateStore.assignments,
+        [selectedPrestartTypeId]: updatedAssignments,
+      }
+    };
+
+    setTemplateStore(newStore);
+    handleSavePrestartTemplates(newStore);
+  };
+
+  const handleAddPrestartType = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTypeName.trim()) return;
+
+    const newId = Math.max(...templateStore.types.map(t => t.id), 0) + 1;
+    const newTypeObj: PrestartTypeDefinition = {
+      id: newId,
+      name: newTypeName.trim(),
+      description: newTypeDesc.trim() || 'Custom Plant Inspection Checklist',
+      badgeColor: 'amber',
+    };
+
+    // Default with core safety items
+    const defaultCoreIds = ['engine_oil', 'coolant', 'fuel_level', 'brakes', 'lights_beacons', 'seatbelt', 'fire_extinguisher', 'horn_beeper', 'controls_estop'];
+
+    const newStore: PrestartTemplateStore = {
+      ...templateStore,
+      types: [...templateStore.types, newTypeObj],
+      assignments: {
+        ...templateStore.assignments,
+        [newId]: defaultCoreIds,
+      }
+    };
+
+    setTemplateStore(newStore);
+    setSelectedPrestartTypeId(newId);
+    setNewTypeName('');
+    setNewTypeDesc('');
+    setShowAddPrestartTypeModal(false);
+    handleSavePrestartTemplates(newStore);
+  };
+
+  const handleAddQuestion = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQLabel.trim()) return;
+
+    const newId = 'custom_q_' + Date.now();
+    const newQuestion: CheckItemDefinition = {
+      id: newId,
+      category: newQCategory,
+      label: newQLabel.trim(),
+      description: newQDesc.trim() || undefined,
+    };
+
+    const currentAssignments = templateStore.assignments[selectedPrestartTypeId] || [];
+    const updatedAssignments = [...currentAssignments, newId];
+
+    const newStore: PrestartTemplateStore = {
+      ...templateStore,
+      questions: [...templateStore.questions, newQuestion],
+      assignments: {
+        ...templateStore.assignments,
+        [selectedPrestartTypeId]: updatedAssignments,
+      }
+    };
+
+    setTemplateStore(newStore);
+    setNewQLabel('');
+    setNewQDesc('');
+    setShowAddQuestionModal(false);
+    handleSavePrestartTemplates(newStore);
   };
 
   useEffect(() => {
@@ -365,6 +520,18 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
         </button>
 
         <button
+          onClick={() => setActiveAdminSubtab('prestart_templates')}
+          className={`pb-3.5 px-5 text-xs font-black transition border-b-2 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeAdminSubtab === 'prestart_templates'
+              ? 'border-amber-500 text-amber-500'
+              : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+        >
+          <ListChecks className="w-4 h-4 text-amber-500" />
+          Prestart Questions & Templates ({templateStore.types.length} Types, {templateStore.questions.length} Items)
+        </button>
+
+        <button
           onClick={() => setActiveAdminSubtab('machines')}
           className={`pb-3.5 px-5 text-xs font-black transition border-b-2 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeAdminSubtab === 'machines'
@@ -492,7 +659,434 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
         </div>
       )}
 
-      {/* Subtab 2: Machine Master List Management */}
+      {/* Subtab: Prestart Questions & Templates Manager */}
+      {activeAdminSubtab === 'prestart_templates' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
+            {/* Header & Save Bar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
+                    Prestart Master Config
+                  </span>
+                  {prestartSaveSuccess && (
+                    <span className="text-xs font-bold text-emerald-500 flex items-center gap-1 animate-pulse">
+                      <Check className="w-3.5 h-3.5" /> Saved & Synced to Server Tower!
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white mt-1">
+                  Prestart Types & Question Checklist Admin
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
+                  Select a machinery type below to tick which prestart questions apply. You can also add unlimited prestart types or custom questions for specific site equipment.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setShowAddPrestartTypeModal(true)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-amber-500" /> New Prestart Type
+                </button>
+
+                <button
+                  onClick={() => setShowAddQuestionModal(true)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-emerald-500" /> Add Custom Question
+                </button>
+
+                <button
+                  onClick={() => handleSavePrestartTemplates()}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Check className="w-4 h-4" /> Save Configuration
+                </button>
+              </div>
+            </div>
+
+            {/* Prestart Type Selection Cards */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-amber-500" />
+                  Select Prestart Machine Type to Configure
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  {templateStore.types.length} Machine Types Available
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {templateStore.types.map((typeObj) => {
+                  const isSelected = selectedPrestartTypeId === typeObj.id;
+                  const assignedCount = (templateStore.assignments[typeObj.id] || []).length;
+                  const totalQuestionsCount = templateStore.questions.length;
+
+                  return (
+                    <button
+                      key={typeObj.id}
+                      onClick={() => setSelectedPrestartTypeId(typeObj.id)}
+                      className={`p-4 rounded-2xl border text-left transition relative cursor-pointer flex flex-col justify-between h-full ${
+                        isSelected
+                          ? 'bg-amber-500/10 border-amber-500/60 ring-2 ring-amber-500/30'
+                          : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                            isSelected ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                          }`}>
+                            Type {typeObj.id}
+                          </span>
+
+                          <span className="text-[11px] font-extrabold text-slate-500 dark:text-slate-400 font-mono">
+                            {assignedCount}/{totalQuestionsCount} items
+                          </span>
+                        </div>
+
+                        <h4 className="text-xs font-black text-slate-900 dark:text-white leading-tight">
+                          {typeObj.name}
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
+                          {typeObj.description}
+                        </p>
+                      </div>
+
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-[10px]">
+                        <span className="text-slate-400 font-medium">Click to configure questions</span>
+                        {isSelected && (
+                          <span className="text-amber-500 font-black flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" /> ACTIVE
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Questions Filter & Search Toolbar */}
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              {/* Category Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+                {['ALL', 'Fluid Levels', 'Ground & Mechanical', 'Cab & Safety', 'Operational Checks', 'Special & Rigging'].map((cat) => {
+                  const isActive = categoryFilter === cat;
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setCategoryFilter(cat)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition whitespace-nowrap cursor-pointer ${
+                        isActive
+                          ? 'bg-slate-900 dark:bg-amber-500 text-white dark:text-slate-950 shadow-sm'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Search Box */}
+              <div className="relative min-w-[220px]">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Filter question text..."
+                  value={questionSearchQuery}
+                  onChange={(e) => setQuestionSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                />
+              </div>
+            </div>
+
+            {/* Question Bank Ticking Grid */}
+            <div className="space-y-6">
+              {['Fluid Levels', 'Ground & Mechanical', 'Cab & Safety', 'Operational Checks', 'Special & Rigging'].map((categoryName) => {
+                // Check if this category matches current categoryFilter
+                if (categoryFilter !== 'ALL' && categoryFilter !== categoryName) return null;
+
+                const categoryQuestions = templateStore.questions.filter((q) => {
+                  if (q.category !== categoryName) return false;
+                  if (questionSearchQuery.trim()) {
+                    const query = questionSearchQuery.toLowerCase();
+                    return q.label.toLowerCase().includes(query) || (q.description && q.description.toLowerCase().includes(query));
+                  }
+                  return true;
+                });
+
+                if (categoryQuestions.length === 0) return null;
+
+                const activeAssignmentsForType = templateStore.assignments[selectedPrestartTypeId] || [];
+                const activeCountInCategory = categoryQuestions.filter(q => activeAssignmentsForType.includes(q.id)).length;
+                const allEnabled = activeCountInCategory === categoryQuestions.length;
+
+                return (
+                  <div key={categoryName} className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                          {categoryName}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
+                          {activeCountInCategory} of {categoryQuestions.length} ticked
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleCategory(categoryName, true)}
+                          className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                        >
+                          Tick All
+                        </button>
+                        <span className="text-slate-300 dark:text-slate-700">|</span>
+                        <button
+                          onClick={() => handleToggleCategory(categoryName, false)}
+                          className="text-[11px] font-bold text-slate-500 hover:underline cursor-pointer"
+                        >
+                          Untick All
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {categoryQuestions.map((q) => {
+                        const isTicked = activeAssignmentsForType.includes(q.id);
+
+                        return (
+                          <div
+                            key={q.id}
+                            onClick={() => handleToggleQuestion(q.id)}
+                            className={`p-3.5 rounded-2xl border transition cursor-pointer flex items-start gap-3 ${
+                              isTicked
+                                ? 'bg-white dark:bg-slate-900 border-emerald-500/50 shadow-sm ring-1 ring-emerald-500/20'
+                                : 'bg-slate-50/70 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800/80 opacity-60 hover:opacity-100'
+                            }`}
+                          >
+                            <div className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition ${
+                              isTicked
+                                ? 'bg-emerald-500 text-slate-950 font-black'
+                                : 'border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                            }`}>
+                              {isTicked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <h5 className={`text-xs font-bold leading-snug ${
+                                  isTicked ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                }`}>
+                                  {q.label}
+                                </h5>
+                                <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                                  isTicked ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                                }`}>
+                                  {isTicked ? 'Active' : 'Off'}
+                                </span>
+                              </div>
+                              {q.description && (
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                                  {q.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Machine Prestart Type Mapping Quick Reference */}
+            <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
+              <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                <Truck className="w-3.5 h-3.5 text-amber-500" />
+                Fleet Machine Prestart Type Mapping
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                Assigned Prestart Types for all current fleet machines. Change any machine's type here to immediately update its prestart checklist.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {machines.map((m) => (
+                  <div key={m.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[10px] font-black text-amber-500 font-mono bg-amber-500/10 px-2 py-0.5 rounded-full">
+                        {m.unitCode}
+                      </span>
+                      <h5 className="text-xs font-bold text-slate-900 dark:text-white mt-1 line-clamp-1">
+                        {m.name}
+                      </h5>
+                    </div>
+
+                    <select
+                      value={m.prestartType}
+                      onChange={(e) => {
+                        const newTypeNum = parseInt(e.target.value, 10);
+                        m.prestartType = newTypeNum;
+                        onReloadMasterData();
+                      }}
+                      className="px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      {templateStore.types.map(t => (
+                        <option key={t.id} value={t.id}>
+                          Type {t.id}: {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Prestart Type Modal */}
+      {showAddPrestartTypeModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Plus className="w-4 h-4 text-amber-500" />
+              Create New Prestart Machine Type
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Define a custom prestart type for specific site machinery (e.g. Scaffolding Towers, Hydro-Excavators, Mobile Lighting Towers).
+            </p>
+
+            <form onSubmit={handleAddPrestartType} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Type Name <span className="text-amber-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Hydro-Vacuum Excavators"
+                  value={newTypeName}
+                  onChange={(e) => setNewTypeName(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Description / Applicability
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Non-destructive digging units and high pressure pumps"
+                  value={newTypeDesc}
+                  onChange={(e) => setNewTypeDesc(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddPrestartTypeModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black cursor-pointer shadow-sm"
+                >
+                  Create Prestart Type
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Custom Question Modal */}
+      {showAddQuestionModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <Plus className="w-4 h-4 text-emerald-500" />
+              Add Custom Question to Master Bank
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Create a custom site inspection question. It will be added to the Master Bank and enabled for the currently selected Prestart Type.
+            </p>
+
+            <form onSubmit={handleAddQuestion} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Category
+                </label>
+                <select
+                  value={newQCategory}
+                  onChange={(e) => setNewQCategory(e.target.value as any)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold"
+                >
+                  <option value="Fluid Levels">Fluid Levels</option>
+                  <option value="Ground & Mechanical">Ground & Mechanical</option>
+                  <option value="Cab & Safety">Cab & Safety</option>
+                  <option value="Operational Checks">Operational Checks</option>
+                  <option value="Special & Rigging">Special & Rigging</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Question Label <span className="text-amber-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. High Voltage Earth Cable Integrity"
+                  value={newQLabel}
+                  onChange={(e) => setNewQLabel(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Detailed Instructions / Hint
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Inspect bonding clamp connection and insulation sheath"
+                  value={newQDesc}
+                  onChange={(e) => setNewQDesc(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddQuestionModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black cursor-pointer shadow-sm"
+                >
+                  Add Question
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       {activeAdminSubtab === 'machines' && (
         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -548,9 +1142,11 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
                     onChange={e => setNewPrestartType(parseInt(e.target.value) as PrestartType)}
                     className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-extrabold text-amber-500"
                   >
-                    <option value={1}>Type 1: Wheeled Heavy (Tires, Brakes, Steering)</option>
-                    <option value={2}>Type 2: Tracked Heavy (Tracks, Undercarriage)</option>
-                    <option value={3}>Type 3: Auxiliary / Light Vehicle (Tires, Tow Hitch)</option>
+                    {templateStore.types.map(t => (
+                      <option key={t.id} value={t.id}>
+                        Type {t.id}: {t.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -602,7 +1198,7 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
                     <td className="p-3 font-semibold text-slate-900 dark:text-white">{m.name}</td>
                     <td className="p-3 font-bold">
                       <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[11px]">
-                        Prestart Type {m.prestartType}: {m.prestartType === 1 ? 'Wheeled' : m.prestartType === 2 ? 'Tracked' : 'Aux/Light'}
+                        Prestart Type {m.prestartType}: {templateStore.types.find(t => t.id === m.prestartType)?.name || `Type ${m.prestartType}`}
                       </span>
                     </td>
                     <td className="p-3 font-mono font-bold">{m.currentHours} hrs</td>

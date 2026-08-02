@@ -1,4 +1,11 @@
-export type PrestartType = 1 | 2 | 3;
+export type PrestartType = number;
+
+export interface PrestartTypeDefinition {
+  id: number;
+  name: string;
+  description: string;
+  badgeColor?: string;
+}
 
 export interface Worker {
   id: string;
@@ -22,9 +29,16 @@ export interface Machine {
 
 export interface CheckItemDefinition {
   id: string;
-  category: 'Fluid Levels' | 'Ground & Mechanical' | 'Cab & Safety' | 'Operational Checks';
+  category: 'Fluid Levels' | 'Ground & Mechanical' | 'Cab & Safety' | 'Operational Checks' | 'Special & Rigging';
   label: string;
   description?: string;
+}
+
+export interface PrestartTemplateStore {
+  types: PrestartTypeDefinition[];
+  questions: CheckItemDefinition[];
+  assignments: Record<number, string[]>;
+  machineOverrides?: Record<string, string[]>;
 }
 
 export type CheckStatus = 'PASS' | 'FAIL' | 'NA';

@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { INITIAL_WORKERS, INITIAL_MACHINES, DEFAULT_DOCKET_TEMPLATE } from './src/data/defaultData.js';
+import { INITIAL_WORKERS, INITIAL_MACHINES, DEFAULT_DOCKET_TEMPLATE, DEFAULT_PRESTART_TEMPLATE_STORE } from './src/data/defaultData.js';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3004;
@@ -32,6 +32,7 @@ const WORKERS_JSON_PATH = path.join(STORAGE_DIR, 'workers.json');
 const MACHINES_JSON_PATH = path.join(STORAGE_DIR, 'machines.json');
 const DOCKETS_JSON_PATH = path.join(STORAGE_DIR, 'dockets.json');
 const TEMPLATE_JSON_PATH = path.join(STORAGE_DIR, 'docket_template.json');
+const PRESTART_TEMPLATES_JSON_PATH = path.join(STORAGE_DIR, 'prestart_templates.json');
 
 function getDocketTemplate() {
   if (fs.existsSync(TEMPLATE_JSON_PATH)) {
@@ -46,6 +47,21 @@ function getDocketTemplate() {
 
 function saveDocketTemplate(template: any) {
   fs.writeFileSync(TEMPLATE_JSON_PATH, JSON.stringify(template, null, 2));
+}
+
+function getPrestartTemplates() {
+  if (fs.existsSync(PRESTART_TEMPLATES_JSON_PATH)) {
+    try {
+      return JSON.parse(fs.readFileSync(PRESTART_TEMPLATES_JSON_PATH, 'utf-8'));
+    } catch (e) {
+      // fallback
+    }
+  }
+  return DEFAULT_PRESTART_TEMPLATE_STORE;
+}
+
+function savePrestartTemplates(store: any) {
+  fs.writeFileSync(PRESTART_TEMPLATES_JSON_PATH, JSON.stringify(store, null, 2));
 }
 
 function parseCsvLine(line: string): string[] {
@@ -724,6 +740,19 @@ app.post('/api/dockets/template', (req, res) => {
   const updated = { ...current, ...req.body };
   saveDocketTemplate(updated);
   res.json(updated);
+});
+
+app.get('/api/prestart-templates', (req, res) => {
+  res.json(getPrestartTemplates());
+});
+
+app.post('/api/prestart-templates', (req, res) => {
+  const store = req.body;
+  if (store && store.types && store.questions) {
+    savePrestartTemplates(store);
+    return res.json({ success: true, store });
+  }
+  res.status(400).json({ error: 'Invalid template payload' });
 });
 
 // Batch sync endpoint for offline queue

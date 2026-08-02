@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Worker, Machine, PrestartSubmission, CheckStatus, ItemCheckResult, PrestartType } from '../types';
-import { PRESTART_CHECK_ITEMS } from '../data/defaultData';
+import { Worker, Machine, PrestartSubmission, CheckStatus, ItemCheckResult, PrestartType, PrestartTemplateStore } from '../types';
+import { getSavedPrestartTemplates, saveSavedPrestartTemplates, getCheckItemsForType } from '../data/defaultData';
 import { SignatureCanvas } from './SignatureCanvas';
-import { saveOfflinePrestart, attemptServerSync, getSimulatedOffline } from '../utils/offlineStore';
-import { CheckCircle2, AlertTriangle, XCircle, ShieldAlert, Truck, Wrench, Layers, Clock, Send, FileSpreadsheet, Check } from 'lucide-react';
+import { saveOfflinePrestart, attemptServerSync, getSimulatedOffline, getTailscaleIp } from '../utils/offlineStore';
+import { smartFetchApi } from '../utils/apiClient';
+import { CheckCircle2, AlertTriangle, XCircle, ShieldAlert, Truck, Wrench, Layers, Clock, Send, FileSpreadsheet, Check, Sparkles } from 'lucide-react';
 
 interface PrestartFormProps {
   workers: Worker[];
@@ -23,6 +24,21 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
   const [submittedSubmission, setSubmittedSubmission] = useState<PrestartSubmission | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const [templateStore, setTemplateStore] = useState<PrestartTemplateStore>(() => getSavedPrestartTemplates());
+
+  // Sync templates from server tower if connected
+  useEffect(() => {
+    const targetIp = getTailscaleIp();
+    smartFetchApi('/api/prestart-templates', {}, targetIp)
+      .then(({ data }) => {
+        if (data && data.types && data.questions) {
+          setTemplateStore(data);
+          saveSavedPrestartTemplates(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Set default worker if available
   useEffect(() => {
     if (workers.length > 0 && !selectedWorkerId) {
@@ -38,7 +54,12 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
   const activeMachine = machines.find(m => m.id === selectedMachineId);
   const prestartType: PrestartType = activeMachine ? activeMachine.prestartType : 1;
 
-  const currentCheckItems = PRESTART_CHECK_ITEMS[prestartType] || PRESTART_CHECK_ITEMS[1];
+  const currentCheckItems = getCheckItemsForType(prestartType, templateStore, activeMachine?.id);
+  const activePrestartTypeObj = templateStore.types.find(t => t.id === prestartType) || {
+    id: prestartType,
+    name: `Prestart Type ${prestartType}`,
+    description: 'Custom Prestart Checklist',
+  };
 
   const handleMachineChange = (machineId: string) => {
     setSelectedMachineId(machineId);
@@ -172,9 +193,11 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
       {/* Page Header */}
       <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest">
-            Daily Safety & Operations Checklist
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest">
+              Daily Safety & Operations Checklist
+            </span>
+          </div>
           <h2 className="text-xl font-black text-slate-900 dark:text-white mt-0.5 tracking-tight">
             Machinery Prestart Inspection
           </h2>
@@ -182,6 +205,18 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
             Complete before operating plant equipment. Safety checks load automatically for the selected machine.
           </p>
         </div>
+        
+        {activeMachine && (
+          <div className="bg-slate-100 dark:bg-slate-800/80 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700/80 text-right flex flex-col justify-center">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Active Template Check
+            </span>
+            <span className="text-xs font-black text-amber-500 flex items-center justify-end gap-1.5 mt-0.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              {activePrestartTypeObj.name} ({currentCheckItems.length} items)
+            </span>
+          </div>
+        )}
       </div>
 
       {formError && (
