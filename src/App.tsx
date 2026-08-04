@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Worker, Machine } from './types';
-import { INITIAL_WORKERS, INITIAL_MACHINES } from './data/defaultData';
+import { getSavedWorkers, saveSavedWorkers, getSavedMachines, saveSavedMachines } from './data/defaultData';
 import { getTailscaleIp } from './utils/offlineStore';
 import { smartFetchApi } from './utils/apiClient';
 import { Header } from './components/Header';
@@ -11,17 +11,23 @@ import { ServerTowerAdmin } from './components/ServerTowerAdmin';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'prestart' | 'docket' | 'history' | 'server'>('prestart');
-  const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
-  const [machines, setMachines] = useState<Machine[]>(INITIAL_MACHINES);
+  const [workers, setWorkers] = useState<Worker[]>(() => getSavedWorkers());
+  const [machines, setMachines] = useState<Machine[]>(() => getSavedMachines());
 
   const fetchMasterLists = async () => {
     const targetIp = getTailscaleIp();
     try {
       const { data: wData } = await smartFetchApi('/api/master/workers', {}, targetIp);
-      if (Array.isArray(wData) && wData.length > 0) setWorkers(wData);
+      if (Array.isArray(wData) && wData.length > 0) {
+        setWorkers(wData);
+        saveSavedWorkers(wData);
+      }
 
       const { data: mData } = await smartFetchApi('/api/master/machines', {}, targetIp);
-      if (Array.isArray(mData) && mData.length > 0) setMachines(mData);
+      if (Array.isArray(mData) && mData.length > 0) {
+        setMachines(mData);
+        saveSavedMachines(mData);
+      }
     } catch (e) {
       console.log('Using local cached master lists (offline/initial startup)');
     }

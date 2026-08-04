@@ -1,10 +1,10 @@
 import { Machine, Worker, CheckItemDefinition, PrestartTypeDefinition, PrestartTemplateStore, DocketTemplateConfig } from '../types';
 
 export const INITIAL_WORKERS: Worker[] = [
-  { id: 'w1', name: 'Dave Miller', role: 'Senior Plant Operator', pin: '1234', phone: '0412 888 101', active: true },
-  { id: 'w2', name: 'Sarah Jenkins', role: 'Excavator & Loader Operator', pin: '2345', phone: '0423 999 202', active: true },
-  { id: 'w3', name: 'Jack Thompson', role: 'Heavy Diesel Fitter & Operator', pin: '3456', phone: '0434 111 303', active: true },
-  { id: 'w4', name: 'Mick O\'Connor', role: 'Site Supervisor', pin: '4567', phone: '0445 222 404', active: true },
+  { id: 'w1', name: 'Name 1', role: 'Senior Plant Operator', pin: '1234', phone: '0412 888 101', active: true },
+  { id: 'w2', name: 'Name 2', role: 'Excavator & Loader Operator', pin: '2345', phone: '0423 999 202', active: true },
+  { id: 'w3', name: 'Name 3', role: 'Heavy Diesel Fitter & Operator', pin: '3456', phone: '0434 111 303', active: true },
+  { id: 'w4', name: 'Name 4', role: 'Site Supervisor', pin: '4567', phone: '0445 222 404', active: true },
 ];
 
 export const INITIAL_MACHINES: Machine[] = [
@@ -297,5 +297,50 @@ export function getSavedDocketTemplate(): DocketTemplateConfig {
 export function saveSavedDocketTemplate(config: DocketTemplateConfig): void {
   if (typeof window !== 'undefined') {
     localStorage.setItem(DOCKET_TEMPLATE_KEY, JSON.stringify(config));
+  }
+}
+
+const WORKERS_CACHE_KEY = 'apex_cached_workers';
+const MACHINES_CACHE_KEY = 'apex_cached_machines';
+
+export function getSavedWorkers(): Worker[] {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem(WORKERS_CACHE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        // fallback
+      }
+    }
+  }
+  return INITIAL_WORKERS;
+}
+
+export function saveSavedWorkers(workers: Worker[]): void {
+  if (typeof window !== 'undefined' && Array.isArray(workers)) {
+    localStorage.setItem(WORKERS_CACHE_KEY, JSON.stringify(workers));
+  }
+}
+
+export function getSavedMachines(): Machine[] {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem(MACHINES_CACHE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {
+        // fallback
+      }
+    }
+  }
+  return INITIAL_MACHINES;
+}
+
+export function saveSavedMachines(machines: Machine[]): void {
+  if (typeof window !== 'undefined' && Array.isArray(machines)) {
+    localStorage.setItem(MACHINES_CACHE_KEY, JSON.stringify(machines));
   }
 }
