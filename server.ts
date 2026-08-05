@@ -28,11 +28,27 @@ if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 if (!fs.existsSync(PDF_DIR)) fs.mkdirSync(PDF_DIR, { recursive: true });
 
 const PRESTARTS_CSV_PATH = path.join(STORAGE_DIR, 'prestarts.csv');
+const PRESTARTS_JSON_PATH = path.join(STORAGE_DIR, 'prestarts.json');
 const WORKERS_JSON_PATH = path.join(STORAGE_DIR, 'workers.json');
 const MACHINES_JSON_PATH = path.join(STORAGE_DIR, 'machines.json');
 const DOCKETS_JSON_PATH = path.join(STORAGE_DIR, 'dockets.json');
 const DEFECTS_JSON_PATH = path.join(STORAGE_DIR, 'defects.json');
 const TEMPLATE_JSON_PATH = path.join(STORAGE_DIR, 'docket_template.json');
+
+function getPrestarts(): any[] {
+  if (fs.existsSync(PRESTARTS_JSON_PATH)) {
+    try {
+      return JSON.parse(fs.readFileSync(PRESTARTS_JSON_PATH, 'utf-8'));
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+
+function savePrestarts(prestarts: any[]) {
+  fs.writeFileSync(PRESTARTS_JSON_PATH, JSON.stringify(prestarts, null, 2));
+}
 
 function getDefects(): any[] {
   if (fs.existsSync(DEFECTS_JSON_PATH)) {
@@ -586,6 +602,27 @@ app.post('/api/master/machines', (req, res) => {
   res.json({ success: true, machines });
 });
 
+// Get prestarts list
+app.get('/api/prestarts', async (req, res) => {
+  const targetIp = (req.query.ip as string || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const r = await fetch(`${targetUrl}/api/prestarts`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Silent fallback
+    }
+  }
+  res.json(getPrestarts());
+});
+
 // Submit a single prestart
 app.post('/api/prestarts', (req, res) => {
   const submission = req.body;
@@ -594,6 +631,15 @@ app.post('/api/prestarts', (req, res) => {
   submission.syncedAt = new Date().toISOString();
 
   appendPrestartToCSV(submission);
+
+  const existingPrestarts = getPrestarts();
+  const pIdx = existingPrestarts.findIndex((p: any) => p.id === submission.id);
+  if (pIdx >= 0) {
+    existingPrestarts[pIdx] = submission;
+  } else {
+    existingPrestarts.push(submission);
+  }
+  savePrestarts(existingPrestarts);
 
   // Update Machine hours & last prestart
   const machines = getMachines();
@@ -771,7 +817,23 @@ app.post('/api/prestart-templates', (req, res) => {
   res.status(400).json({ error: 'Invalid template payload' });
 });
 
-app.get('/api/defects', (req, res) => {
+app.get('/api/defects', async (req, res) => {
+  const targetIp = (req.query.ip as string || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const r = await fetch(`${targetUrl}/api/defects`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Silent fallback
+    }
+  }
   res.json(getDefects());
 });
 
@@ -801,7 +863,7 @@ app.post('/api/sync', async (req, res) => {
     const targetUrl = formatTargetUrl(targetIp);
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       const remoteRes = await fetch(`${targetUrl}/api/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -814,10 +876,7 @@ app.post('/api/sync', async (req, res) => {
         return res.json(remoteData);
       }
     } catch (e: any) {
-      return res.status(503).json({
-        success: false,
-        message: `Unable to reach Tailscale server node at ${targetIp} (${e.message || 'Connection timed out'})`
-      });
+      console.warn(`Remote proxy sync to ${targetIp} unreachable. Falling back to local server processing.`);
     }
   }
 
@@ -837,8 +896,15 @@ app.post('/api/sync', async (req, res) => {
     }
   }
 
+  const existingPrestarts = getPrestarts();
+  const prestartMap = new Map<string, any>();
+  existingPrestarts.forEach((p: any) => { if (p && p.id) prestartMap.set(p.id, p); });
+
   for (const prestart of prestarts) {
-    appendPrestartToCSV(prestart);
+    if (!prestartMap.has(prestart.id)) {
+      appendPrestartToCSV(prestart);
+    }
+    prestartMap.set(prestart.id, prestart);
     
     // Auto extract defects from prestart checks if any failed/noted
     if (prestart.checks && typeof prestart.checks === 'object') {
@@ -878,6 +944,8 @@ app.post('/api/sync', async (req, res) => {
     }
     prestartsProcessed++;
   }
+
+  savePrestarts(Array.from(prestartMap.values()));
 
   const updatedDefects = Array.from(defectMap.values());
   saveDefects(updatedDefects);

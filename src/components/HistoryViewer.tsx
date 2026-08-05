@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PrestartSubmission, JobDocket } from '../types';
-import { getOfflinePrestarts, getOfflineDockets } from '../utils/offlineStore';
+import { getOfflinePrestarts, getOfflineDockets, getTailscaleIp } from '../utils/offlineStore';
+import { smartFetchApi } from '../utils/apiClient';
 import { generateDocketPDF } from '../utils/pdfGenerator';
 import { DocketViewerModal } from './DocketViewerModal';
 import { History, ClipboardCheck, FileText, Download, CheckCircle2, AlertTriangle, XCircle, Search, Filter, Eye } from 'lucide-react';
@@ -12,9 +13,33 @@ export const HistoryViewer: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedDocket, setSelectedDocket] = useState<JobDocket | null>(null);
 
-  const reloadData = () => {
-    setPrestarts(getOfflinePrestarts());
-    setDockets(getOfflineDockets());
+  const reloadData = async () => {
+    const localPrestarts = getOfflinePrestarts();
+    const localDockets = getOfflineDockets();
+
+    setPrestarts(localPrestarts);
+    setDockets(localDockets);
+
+    try {
+      const targetIp = getTailscaleIp();
+      const { data: serverPrestarts } = await smartFetchApi('/api/prestarts', {}, targetIp);
+      if (Array.isArray(serverPrestarts)) {
+        const map = new Map<string, PrestartSubmission>();
+        serverPrestarts.forEach(p => { if (p && p.id) map.set(p.id, p); });
+        localPrestarts.forEach(p => { if (p && p.id) map.set(p.id, { ...map.get(p.id), ...p }); });
+        setPrestarts(Array.from(map.values()));
+      }
+
+      const { data: serverDockets } = await smartFetchApi('/api/dockets', {}, targetIp);
+      if (Array.isArray(serverDockets)) {
+        const dMap = new Map<string, JobDocket>();
+        serverDockets.forEach(d => { if (d && d.id) dMap.set(d.id, d); });
+        localDockets.forEach(d => { if (d && d.id) dMap.set(d.id, { ...dMap.get(d.id), ...d }); });
+        setDockets(Array.from(dMap.values()));
+      }
+    } catch (e) {
+      // Offline fallback
+    }
   };
 
   useEffect(() => {
