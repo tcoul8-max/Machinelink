@@ -166,6 +166,14 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
               }
             }
           }
+
+          // Additional JSON fallback if CSV is empty
+          if (fetchedRows.length === 0) {
+            const { data: jsonPrestarts } = await smartFetchApi('/api/prestarts', {}, currentIp);
+            if (Array.isArray(jsonPrestarts) && jsonPrestarts.length > 0) {
+              fetchedRows = jsonPrestarts.map(p => convertSubmissionToCsvRow(p));
+            }
+          }
         }
       } catch (csvErr) {
         console.warn('Error fetching CSV data:', csvErr);
@@ -196,6 +204,12 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
       }
 
       setCsvData({ headers, rows, rawContent: rawTextContent });
+      if (rows.length > 0) {
+        setServerInfo((prev: any) => ({
+          ...(prev || {}),
+          serverPrestartsCount: Math.max(prev?.serverPrestartsCount || 0, rows.length),
+        }));
+      }
 
       const { data: dockets } = await smartFetchApi('/api/dockets', {}, currentIp);
       if (Array.isArray(dockets)) setServerDockets(dockets);

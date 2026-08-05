@@ -457,7 +457,7 @@ app.get('/api/server-info', async (req, res) => {
 
   const prestartCsvContent = fs.readFileSync(PRESTARTS_CSV_PATH, 'utf-8');
   const csvLines = prestartCsvContent.trim().split('\n');
-  const prestartsCount = Math.max(0, csvLines.length - 1);
+  const prestartsCount = Math.max(0, csvLines.length - 1, getPrestarts().length);
   const dockets = getDockets();
 
   res.json({
@@ -551,7 +551,29 @@ app.get('/api/master/workers', async (req, res) => {
   res.json(getWorkers());
 });
 
-app.post('/api/master/workers', (req, res) => {
+app.post('/api/master/workers', async (req, res) => {
+  const targetIp = (req.query.ip as string || req.body?.ip || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const r = await fetch(`${targetUrl}/api/master/workers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Silent fallback
+    }
+  }
+
   const workers = getWorkers();
   const newWorker = req.body;
   
@@ -588,7 +610,29 @@ app.get('/api/master/machines', async (req, res) => {
   res.json(getMachines());
 });
 
-app.post('/api/master/machines', (req, res) => {
+app.post('/api/master/machines', async (req, res) => {
+  const targetIp = (req.query.ip as string || req.body?.ip || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const r = await fetch(`${targetUrl}/api/master/machines`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Silent fallback
+    }
+  }
+
   const machines = getMachines();
   const newMachine = req.body;
 
@@ -691,29 +735,29 @@ app.get('/api/reports/prestarts.csv', async (req, res) => {
 
 // View CSV content as JSON for the server tower dashboard
 app.get('/api/prestarts/csv-data', async (req, res) => {
-  let content = '';
+  const targetIp = (req.query.ip as string || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const r = await fetch(`${targetUrl}/api/prestarts/csv-data`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Fallback to local file below
+    }
+  }
 
+  let content = '';
   if (fs.existsSync(PRESTARTS_CSV_PATH)) {
     try {
       content = fs.readFileSync(PRESTARTS_CSV_PATH, 'utf-8');
     } catch (e) {
       console.error('Error reading PRESTARTS_CSV_PATH:', e);
-    }
-  }
-
-  const targetIp = (req.query.ip as string || '').trim();
-  if (!content && targetIp && targetIp !== '3000' && targetIp !== 'local') {
-    const targetUrl = formatTargetUrl(targetIp);
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const r = await fetch(`${targetUrl}/api/reports/prestarts.csv`, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (r.ok) {
-        content = await r.text();
-      }
-    } catch (e) {
-      // Fallback
     }
   }
 
@@ -837,7 +881,29 @@ app.get('/api/defects', async (req, res) => {
   res.json(getDefects());
 });
 
-app.post('/api/defects', (req, res) => {
+app.post('/api/defects', async (req, res) => {
+  const targetIp = (req.query.ip as string || req.body?.ip || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const r = await fetch(`${targetUrl}/api/defects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Silent fallback
+    }
+  }
+
   const incoming = Array.isArray(req.body) ? req.body : [req.body];
   const existing = getDefects();
   const map = new Map<string, any>();
