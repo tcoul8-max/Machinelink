@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Worker, Machine } from './types';
 import { getSavedWorkers, saveSavedWorkers, getSavedMachines, saveSavedMachines } from './data/defaultData';
 import { getTailscaleIp } from './utils/offlineStore';
+import { syncDefectsFromServer } from './utils/defectStore';
 import { smartFetchApi } from './utils/apiClient';
 import { Header } from './components/Header';
 import { PrestartForm } from './components/PrestartForm';
@@ -29,6 +30,8 @@ export default function App() {
         setMachines(mData);
         saveSavedMachines(mData);
       }
+
+      await syncDefectsFromServer();
     } catch (e) {
       console.log('Using local cached master lists (offline/initial startup)');
     }

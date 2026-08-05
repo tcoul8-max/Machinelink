@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Server, ClipboardCheck, FileText, Database, History, Edit2, Wrench, AlertTriangle } from 'lucide-react';
 import { getTailscaleIp, getOfflinePrestarts, getOfflineDockets, attemptServerSync } from '../utils/offlineStore';
-import { getSavedDefects } from '../utils/defectStore';
+import { getSavedDefects, syncDefectsFromServer } from '../utils/defectStore';
 import { smartFetchApi } from '../utils/apiClient';
 import { TailscaleIpModal } from './TailscaleIpModal';
 
@@ -37,6 +37,9 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
         isChecking: false,
         error: isOnline ? undefined : 'Unable to connect to Tailscale server node.'
       });
+      if (isOnline) {
+        syncDefectsFromServer().catch(() => {});
+      }
     } catch (e: any) {
       setConnectionStatus({
         isOnline: false,

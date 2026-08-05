@@ -821,14 +821,51 @@ app.post('/api/sync', async (req, res) => {
     }
   }
 
-  const { prestarts = [], dockets = [] } = req.body;
+  const { prestarts = [], dockets = [], defects = [] } = req.body;
 
   let prestartsProcessed = 0;
   let docketsProcessed = 0;
 
+  // Sync Defects
+  const existingDefects = getDefects();
+  const defectMap = new Map<string, any>();
+  existingDefects.forEach((d: any) => { if (d && d.id) defectMap.set(d.id, d); });
+
+  for (const defect of defects) {
+    if (defect && defect.id) {
+      defectMap.set(defect.id, { ...defectMap.get(defect.id), ...defect });
+    }
+  }
+
   for (const prestart of prestarts) {
     appendPrestartToCSV(prestart);
     
+    // Auto extract defects from prestart checks if any failed/noted
+    if (prestart.checks && typeof prestart.checks === 'object') {
+      Object.entries(prestart.checks).forEach(([checkItemId, checkResult]: [string, any]) => {
+        if (checkResult && (checkResult.status === 'FAIL' || (checkResult.notes && checkResult.notes.trim().length > 0))) {
+          const defectId = `DEF-${prestart.id.replace(/[^a-zA-Z0-9]/g, '')}-${checkItemId}`;
+          if (!defectMap.has(defectId)) {
+            defectMap.set(defectId, {
+              id: defectId,
+              submissionId: prestart.id,
+              machineId: prestart.machineId,
+              unitCode: prestart.machineCode,
+              machineName: prestart.machineName,
+              checkItemId,
+              checkItemLabel: checkItemId,
+              category: 'Prestart Check',
+              reportedByWorkerId: prestart.workerId,
+              reportedByWorkerName: prestart.workerName,
+              reportedAt: prestart.timestamp || new Date().toISOString(),
+              status: 'OPEN',
+              notes: checkResult.notes || 'Reported during prestart inspection',
+            });
+          }
+        }
+      });
+    }
+
     // Update machine state
     const machines = getMachines();
     const machine = machines.find((m: any) => m.id === prestart.machineId || m.unitCode === prestart.machineCode);
@@ -841,6 +878,9 @@ app.post('/api/sync', async (req, res) => {
     }
     prestartsProcessed++;
   }
+
+  const updatedDefects = Array.from(defectMap.values());
+  saveDefects(updatedDefects);
 
   const existingDockets = getDockets();
   for (const docket of dockets) {
@@ -861,6 +901,7 @@ app.post('/api/sync', async (req, res) => {
     syncedAt: new Date().toISOString(),
     prestartsSyncedCount: prestartsProcessed,
     docketsSyncedCount: docketsProcessed,
+    defects: updatedDefects,
     serverMessage: 'Tailscale Server Tower synchronized successfully.'
   });
 });

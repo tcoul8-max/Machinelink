@@ -102,21 +102,16 @@ export async function attemptServerSync(): Promise<{
   const prestarts = getOfflinePrestarts().filter(p => !p.synced);
   const dockets = getOfflineDockets().filter(d => !d.synced);
 
-  if (prestarts.length === 0 && dockets.length === 0) {
-    return {
-      success: true,
-      prestartsSyncedCount: 0,
-      docketsSyncedCount: 0,
-      message: 'Queue is clean. All records are up to date with the server.',
-    };
-  }
-
   try {
     const targetIp = getTailscaleIp();
+    // Get local defects to sync
+    const rawDefects = localStorage.getItem('apex_defects_store');
+    const localDefects = rawDefects ? JSON.parse(rawDefects) : [];
+
     const { res, data } = await smartFetchApi('/api/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prestarts, dockets, ip: targetIp }),
+      body: JSON.stringify({ prestarts, dockets, defects: localDefects, ip: targetIp }),
     }, targetIp);
 
     if (!res.ok) {
@@ -130,7 +125,26 @@ export async function attemptServerSync(): Promise<{
     localStorage.setItem(OFFLINE_PRESTARTS_KEY, JSON.stringify(allPrestarts));
     localStorage.setItem(OFFLINE_DOCKETS_KEY, JSON.stringify(allDockets));
 
+    // Handle returned defects from server
+    if (data && Array.isArray(data.defects)) {
+      const map = new Map<string, any>();
+      localDefects.forEach((d: any) => { if (d && d.id) map.set(d.id, d); });
+      data.defects.forEach((d: any) => { if (d && d.id) map.set(d.id, { ...map.get(d.id), ...d }); });
+      const merged = Array.from(map.values());
+      localStorage.setItem('apex_defects_store', JSON.stringify(merged));
+      window.dispatchEvent(new CustomEvent('defects-updated'));
+    }
+
     window.dispatchEvent(new Event('sync-completed'));
+
+    if (prestarts.length === 0 && dockets.length === 0) {
+      return {
+        success: true,
+        prestartsSyncedCount: 0,
+        docketsSyncedCount: 0,
+        message: 'Defects and system logs synchronized with Tailscale Server Tower.',
+      };
+    }
 
     return {
       success: true,

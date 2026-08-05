@@ -114,9 +114,20 @@ export async function updateDefect(defectId: string, patch: Partial<DefectRecord
 export async function syncDefectsFromServer(): Promise<DefectRecord[]> {
   try {
     const targetIp = getTailscaleIp();
+    const local = getSavedDefects();
+
+    // 1. Post local defects to server to ensure server has anything logged offline
+    if (local.length > 0) {
+      await smartFetchApi('/api/defects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(local),
+      }, targetIp).catch(() => {});
+    }
+
+    // 2. Fetch master defects list from server
     const { data } = await smartFetchApi('/api/defects', {}, targetIp);
     if (Array.isArray(data)) {
-      const local = getSavedDefects();
       const map = new Map<string, DefectRecord>();
       local.forEach(d => map.set(d.id, d));
       data.forEach(d => {
@@ -126,6 +137,7 @@ export async function syncDefectsFromServer(): Promise<DefectRecord[]> {
       });
       const merged = Array.from(map.values());
       saveSavedDefects(merged);
+      window.dispatchEvent(new CustomEvent('defects-updated'));
       return merged;
     }
   } catch (e) {
