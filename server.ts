@@ -35,15 +35,123 @@ const DOCKETS_JSON_PATH = path.join(STORAGE_DIR, 'dockets.json');
 const DEFECTS_JSON_PATH = path.join(STORAGE_DIR, 'defects.json');
 const TEMPLATE_JSON_PATH = path.join(STORAGE_DIR, 'docket_template.json');
 
+function parsePrestartsFromCSV(): any[] {
+  if (!fs.existsSync(PRESTARTS_CSV_PATH)) return [];
+  try {
+    const content = fs.readFileSync(PRESTARTS_CSV_PATH, 'utf-8');
+    const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim().length > 0);
+    if (lines.length <= 1) return [];
+
+    const checkKeyMap: Record<number, { id: string; label: string; cat: string }> = {
+      9: { id: 'engine_oil', label: 'Engine Oil Level & Leaks', cat: 'Engine & Fluids' },
+      10: { id: 'hydraulic_oil', label: 'Hydraulic Oil Level & Hoses', cat: 'Engine & Fluids' },
+      11: { id: 'coolant', label: 'Radiator Coolant Level', cat: 'Engine & Fluids' },
+      12: { id: 'transmission_oil', label: 'Transmission / Drive Oil', cat: 'Engine & Fluids' },
+      13: { id: 'fuel_level', label: 'Fuel Level & Water Trap', cat: 'Engine & Fluids' },
+      14: { id: 'tracks', label: 'Tracks & Undercarriage Tension', cat: 'Ground & Undercarriage' },
+      15: { id: 'tires', label: 'Tires & Wheel Nuts Condition', cat: 'Ground & Undercarriage' },
+      16: { id: 'steering', label: 'Steering Linkages & Cylinder', cat: 'Ground & Undercarriage' },
+      17: { id: 'brakes', label: 'Service & Park Brake Operation', cat: 'Ground & Undercarriage' },
+      18: { id: 'air_cleaner', label: 'Air Cleaner & Intake System', cat: 'General & Safety' },
+      19: { id: 'attachment_bucket', label: 'Bucket, Pins & Attachments', cat: 'General & Safety' },
+      20: { id: 'lights_beacons', label: 'Work Lights, Indicators & Beacons', cat: 'Cabin & Controls' },
+      21: { id: 'seatbelt', label: 'Seatbelt Condition & Mounting', cat: 'Cabin & Controls' },
+      22: { id: 'mirrors_glass', label: 'Mirrors, Glass & Wipers', cat: 'Cabin & Controls' },
+      23: { id: 'fire_extinguisher', label: 'Fire Extinguisher & First Aid', cat: 'Cabin & Controls' },
+      24: { id: 'horn_beeper', label: 'Horn & Reverse Alarm Beeper', cat: 'Cabin & Controls' },
+      25: { id: 'controls_estop', label: 'Controls Neutral Lock & E-Stop', cat: 'Cabin & Controls' }
+    };
+
+    const parsed: any[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = parseCsvLine(lines[i]);
+      if (parts.length < 9) continue;
+
+      const subId = parts[0] || `PRE-${i}`;
+      const timestamp = parts[1] || new Date().toISOString();
+      const date = parts[2] || new Date().toLocaleDateString();
+      const workerName = parts[3] || 'Operator';
+      const machineCode = parts[4] || 'N/A';
+      const machineName = parts[5] || 'N/A';
+      const prestartTypeStr = parts[6] || 'Type 1';
+      const prestartType = parseInt(prestartTypeStr.replace(/\D/g, ''), 10) || 1;
+      const engineHours = parseFloat(parts[7]) || 0;
+      const overallStatus = parts[8] || 'SAFE_TO_OPERATE';
+
+      const checks: Record<string, { status: string; notes?: string }> = {};
+
+      Object.entries(checkKeyMap).forEach(([colIdxStr, meta]) => {
+        const colIdx = parseInt(colIdxStr, 10);
+        const rawVal = parts[colIdx] || 'N/A';
+        if (rawVal !== 'N/A') {
+          let status = 'PASS';
+          let notes = '';
+          if (rawVal.startsWith('FAIL')) {
+            status = 'FAIL';
+            const m = rawVal.match(/\((.*)\)/);
+            if (m) notes = m[1];
+          } else if (rawVal.startsWith('PASS')) {
+            status = 'PASS';
+            const m = rawVal.match(/\((.*)\)/);
+            if (m) notes = m[1];
+          } else {
+            status = 'PASS';
+            notes = rawVal;
+          }
+          checks[meta.id] = { status, notes };
+        }
+      });
+
+      const generalNotes = parts[26] || '';
+      const signatureDataUrl = parts[27] === 'YES' ? 'DATA_EXISTS' : '';
+
+      parsed.push({
+        id: subId,
+        timestamp,
+        date,
+        workerName,
+        workerId: workerName,
+        machineCode,
+        machineName,
+        machineId: machineCode,
+        prestartType,
+        engineHours,
+        overallStatus,
+        checks,
+        generalNotes,
+        signatureDataUrl,
+        synced: true,
+        syncedAt: timestamp
+      });
+    }
+    return parsed;
+  } catch (e) {
+    console.error('Error parsing prestarts from CSV:', e);
+    return [];
+  }
+}
+
 function getPrestarts(): any[] {
+  const map = new Map<string, any>();
+  const csvPrestarts = parsePrestartsFromCSV();
+  csvPrestarts.forEach(p => { if (p && p.id) map.set(p.id, p); });
+
   if (fs.existsSync(PRESTARTS_JSON_PATH)) {
     try {
-      return JSON.parse(fs.readFileSync(PRESTARTS_JSON_PATH, 'utf-8'));
+      const jsonPrestarts = JSON.parse(fs.readFileSync(PRESTARTS_JSON_PATH, 'utf-8'));
+      if (Array.isArray(jsonPrestarts)) {
+        jsonPrestarts.forEach(p => {
+          if (p && p.id) {
+            map.set(p.id, { ...map.get(p.id), ...p });
+          }
+        });
+      }
     } catch (e) {
-      return [];
+      // fallback
     }
   }
-  return [];
+
+  return Array.from(map.values());
 }
 
 function savePrestarts(prestarts: any[]) {
@@ -51,14 +159,73 @@ function savePrestarts(prestarts: any[]) {
 }
 
 function getDefects(): any[] {
+  const defectMap = new Map<string, any>();
+
+  // 1. Read existing defects.json if present
   if (fs.existsSync(DEFECTS_JSON_PATH)) {
     try {
-      return JSON.parse(fs.readFileSync(DEFECTS_JSON_PATH, 'utf-8'));
+      const jsonDefects = JSON.parse(fs.readFileSync(DEFECTS_JSON_PATH, 'utf-8'));
+      if (Array.isArray(jsonDefects)) {
+        jsonDefects.forEach((d: any) => {
+          if (d && d.id) defectMap.set(d.id, d);
+        });
+      }
     } catch (e) {
-      return [];
+      // fallback
     }
   }
-  return [];
+
+  // 2. Extract defects from all prestarts (from getPrestarts())
+  const allPrestarts = getPrestarts();
+  const checkKeyLabelMap: Record<string, { label: string; category: string }> = {
+    engine_oil: { label: 'Engine Oil Level & Leaks', category: 'Engine & Fluids' },
+    hydraulic_oil: { label: 'Hydraulic Oil Level & Hoses', category: 'Engine & Fluids' },
+    coolant: { label: 'Radiator Coolant Level', category: 'Engine & Fluids' },
+    transmission_oil: { label: 'Transmission / Drive Oil', category: 'Engine & Fluids' },
+    fuel_level: { label: 'Fuel Level & Water Trap', category: 'Engine & Fluids' },
+    tracks: { label: 'Tracks & Undercarriage Tension', category: 'Ground & Undercarriage' },
+    tires: { label: 'Tires & Wheel Nuts Condition', category: 'Ground & Undercarriage' },
+    steering: { label: 'Steering Linkages & Cylinder', category: 'Ground & Undercarriage' },
+    brakes: { label: 'Service & Park Brake Operation', category: 'Ground & Undercarriage' },
+    air_cleaner: { label: 'Air Cleaner & Intake System', category: 'General & Safety' },
+    attachment_bucket: { label: 'Bucket, Pins & Attachments', category: 'General & Safety' },
+    lights_beacons: { label: 'Work Lights, Indicators & Beacons', category: 'Cabin & Controls' },
+    seatbelt: { label: 'Seatbelt Condition & Mounting', category: 'Cabin & Controls' },
+    mirrors_glass: { label: 'Mirrors, Glass & Wipers', category: 'Cabin & Controls' },
+    fire_extinguisher: { label: 'Fire Extinguisher & First Aid', category: 'Cabin & Controls' },
+    horn_beeper: { label: 'Horn & Reverse Alarm Beeper', category: 'Cabin & Controls' },
+    controls_estop: { label: 'Controls Neutral Lock & E-Stop', category: 'Cabin & Controls' }
+  };
+
+  allPrestarts.forEach((prestart: any) => {
+    if (prestart.checks && typeof prestart.checks === 'object') {
+      Object.entries(prestart.checks).forEach(([checkItemId, checkResult]: [string, any]) => {
+        if (checkResult && (checkResult.status === 'FAIL' || (checkResult.notes && checkResult.notes.trim().length > 0))) {
+          const defectId = `DEF-${prestart.id.replace(/[^a-zA-Z0-9]/g, '')}-${checkItemId}`;
+          if (!defectMap.has(defectId)) {
+            const meta = checkKeyLabelMap[checkItemId] || { label: checkItemId, category: 'Prestart Inspection' };
+            defectMap.set(defectId, {
+              id: defectId,
+              submissionId: prestart.id,
+              machineId: prestart.machineId || prestart.machineCode,
+              unitCode: prestart.machineCode,
+              machineName: prestart.machineName,
+              checkItemId,
+              checkItemLabel: meta.label,
+              category: meta.category,
+              reportedByWorkerId: prestart.workerId || prestart.workerName,
+              reportedByWorkerName: prestart.workerName,
+              reportedAt: prestart.timestamp || new Date().toISOString(),
+              status: 'OPEN',
+              notes: checkResult.notes || 'Reported during prestart inspection',
+            });
+          }
+        }
+      });
+    }
+  });
+
+  return Array.from(defectMap.values());
 }
 
 function saveDefects(defects: any[]) {
