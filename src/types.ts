@@ -122,6 +122,28 @@ export interface ServerSyncStatus {
   lastSyncTimestamp?: string;
 }
 
+export interface DefectRecord {
+  id: string; // e.g. "DEF-1722800000"
+  submissionId?: string;
+  machineId: string;
+  unitCode: string;
+  machineName: string;
+  checkItemId: string;
+  checkItemLabel: string;
+  category: string;
+  reportedByWorkerId: string;
+  reportedByWorkerName: string;
+  reportedAt: string; // ISO or date string
+  status: 'OPEN' | 'IN_PROGRESS' | 'REPAIRED';
+  notes: string;
+  // Fitter Sign-Off
+  repairedByWorkerId?: string;
+  repairedByWorkerName?: string;
+  repairedAt?: string;
+  repairNotes?: string;
+  fitterSignature?: string;
+}
+
 export interface DocketTemplateConfig {
   companyName: string;
   companyAbn: string;

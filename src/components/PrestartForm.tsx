@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Worker, Machine, PrestartSubmission, CheckStatus, ItemCheckResult, PrestartType, PrestartTemplateStore } from '../types';
+import { Worker, Machine, PrestartSubmission, CheckStatus, ItemCheckResult, PrestartType, PrestartTemplateStore, DefectRecord } from '../types';
 import { getSavedPrestartTemplates, saveSavedPrestartTemplates, getCheckItemsForType } from '../data/defaultData';
+import { getOpenDefectsForMachine, createDefectsFromPrestart } from '../utils/defectStore';
 import { SignatureCanvas } from './SignatureCanvas';
 import { saveOfflinePrestart, attemptServerSync, getSimulatedOffline, getTailscaleIp } from '../utils/offlineStore';
 import { smartFetchApi } from '../utils/apiClient';
@@ -25,6 +26,7 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
   const [formError, setFormError] = useState<string | null>(null);
 
   const [templateStore, setTemplateStore] = useState<PrestartTemplateStore>(() => getSavedPrestartTemplates());
+  const [activeMachineDefects, setActiveMachineDefects] = useState<DefectRecord[]>([]);
 
   // Sync templates from server tower if connected
   useEffect(() => {
@@ -38,6 +40,29 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
       })
       .catch(() => {});
   }, []);
+
+  // Update active defects & pre-fill checks whenever selectedMachineId changes
+  useEffect(() => {
+    if (selectedMachineId) {
+      const openDefects = getOpenDefectsForMachine(selectedMachineId);
+      setActiveMachineDefects(openDefects);
+
+      if (openDefects.length > 0) {
+        setChecks(prev => {
+          const updated = { ...prev };
+          openDefects.forEach(defect => {
+            updated[defect.checkItemId] = {
+              status: 'FAIL',
+              notes: `[UNRESOLVED DEFECT - Reported by ${defect.reportedByWorkerName}]: ${defect.notes}`
+            };
+          });
+          return updated;
+        });
+      }
+    } else {
+      setActiveMachineDefects([]);
+    }
+  }, [selectedMachineId]);
 
   // Set default worker if available
   useEffect(() => {
@@ -173,7 +198,11 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
     // 1. Save locally
     saveOfflinePrestart(newSubmission);
 
-    // 2. Try server sync
+    // 2. Create defect records for any failed/noted items
+    await createDefectsFromPrestart(newSubmission, templateStore.questions);
+    window.dispatchEvent(new CustomEvent('defects-updated'));
+
+    // 3. Try server sync
     const syncRes = await attemptServerSync();
 
     if (syncRes.success) {
@@ -346,6 +375,38 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
               </div>
             )}
           </div>
+
+          {/* Active Defects Banner (If reported previously on this machine) */}
+          {activeMachineDefects.length > 0 && (
+            <div className="p-5 rounded-3xl bg-rose-500/10 border border-rose-500/30 text-rose-500 space-y-2.5 animate-fadeIn shadow-sm">
+              <div className="flex items-center gap-2 font-black text-sm uppercase tracking-wider">
+                <AlertTriangle className="w-5 h-5 text-rose-500 flex-shrink-0" />
+                Unresolved Defects Pending Fitter Sign-Off ({activeMachineDefects.length})
+              </div>
+              <p className="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                Notice: [{activeMachine?.unitCode}] has active unresolved defect records on file. Matching check items below have been pre-filled with defect details for your safety awareness until a Fitter completes repairs.
+              </p>
+              <div className="space-y-2 pt-2 border-t border-rose-500/20">
+                {activeMachineDefects.map(d => (
+                  <div key={d.id} className="text-xs font-semibold flex items-start gap-2.5 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-rose-500/20 shadow-xs">
+                    <Wrench className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-extrabold text-slate-900 dark:text-white">{d.checkItemLabel}</span>
+                        <span className="text-[10px] font-bold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded-full">
+                          Defect Active
+                        </span>
+                      </div>
+                      <p className="text-slate-600 dark:text-slate-300 mt-0.5 font-normal">"{d.notes}"</p>
+                      <span className="text-[10px] text-slate-400 block mt-1 font-medium">
+                        Reported by {d.reportedByWorkerName} • {new Date(d.reportedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Step 2: Dynamic Prestart Checklist Items */}
           <div className="space-y-5">

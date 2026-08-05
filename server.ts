@@ -31,7 +31,23 @@ const PRESTARTS_CSV_PATH = path.join(STORAGE_DIR, 'prestarts.csv');
 const WORKERS_JSON_PATH = path.join(STORAGE_DIR, 'workers.json');
 const MACHINES_JSON_PATH = path.join(STORAGE_DIR, 'machines.json');
 const DOCKETS_JSON_PATH = path.join(STORAGE_DIR, 'dockets.json');
+const DEFECTS_JSON_PATH = path.join(STORAGE_DIR, 'defects.json');
 const TEMPLATE_JSON_PATH = path.join(STORAGE_DIR, 'docket_template.json');
+
+function getDefects(): any[] {
+  if (fs.existsSync(DEFECTS_JSON_PATH)) {
+    try {
+      return JSON.parse(fs.readFileSync(DEFECTS_JSON_PATH, 'utf-8'));
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+
+function saveDefects(defects: any[]) {
+  fs.writeFileSync(DEFECTS_JSON_PATH, JSON.stringify(defects, null, 2));
+}
 const PRESTART_TEMPLATES_JSON_PATH = path.join(STORAGE_DIR, 'prestart_templates.json');
 
 function getDocketTemplate() {
@@ -753,6 +769,27 @@ app.post('/api/prestart-templates', (req, res) => {
     return res.json({ success: true, store });
   }
   res.status(400).json({ error: 'Invalid template payload' });
+});
+
+app.get('/api/defects', (req, res) => {
+  res.json(getDefects());
+});
+
+app.post('/api/defects', (req, res) => {
+  const incoming = Array.isArray(req.body) ? req.body : [req.body];
+  const existing = getDefects();
+  const map = new Map<string, any>();
+  existing.forEach(d => { if (d && d.id) map.set(d.id, d); });
+
+  incoming.forEach(d => {
+    if (d && d.id) {
+      map.set(d.id, { ...map.get(d.id), ...d });
+    }
+  });
+
+  const updated = Array.from(map.values());
+  saveDefects(updated);
+  res.json({ success: true, defects: updated });
 });
 
 // Batch sync endpoint for offline queue
