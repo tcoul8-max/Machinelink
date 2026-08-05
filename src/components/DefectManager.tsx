@@ -168,11 +168,8 @@ export const DefectManager: React.FC<DefectManagerProps> = ({ machines, workers,
                 <Wrench className="w-6 h-6" />
               </span>
               <div>
-                <h2 className="text-2xl font-black tracking-tight flex items-center gap-3">
+                <h2 className="text-2xl font-black tracking-tight">
                   Defect & Maintenance Log
-                  <span className="text-xs font-bold bg-amber-500/20 text-amber-400 px-3 py-1 rounded-full border border-amber-500/30">
-                    Fitter Accountability
-                  </span>
                 </h2>
                 <p className="text-xs text-slate-400">
                   Track reported machinery defects, pre-fill items for operators, and sign off completed repairs.

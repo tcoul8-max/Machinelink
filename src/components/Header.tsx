@@ -109,30 +109,30 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
   return (
     <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-lg">
       {/* Top Banner with Simplified Server Indicator & Sync */}
-      <div className="bg-slate-950 px-4 py-2 text-xs border-b border-slate-800/80">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+      <div className="bg-slate-950 px-3 sm:px-4 py-2 text-xs border-b border-slate-800/80 overflow-hidden">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-3">
           {/* Server IP Node Badge */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             <button
               onClick={() => setShowIpModal(true)}
               title="Click to change Tailscale Tower Server IP"
-              className="flex items-center gap-1.5 px-3 py-1 bg-slate-900 hover:bg-slate-800 transition rounded-full border border-slate-800 cursor-pointer group text-slate-300"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1 bg-slate-900 hover:bg-slate-800 transition rounded-full border border-slate-800 cursor-pointer group text-slate-300 min-w-0 max-w-[170px] xs:max-w-[240px] sm:max-w-none"
             >
-              <Server className="w-3.5 h-3.5 text-amber-500 group-hover:scale-110 transition" />
-              <span className="font-bold text-[11px]">Server:</span>
-              <span className="font-mono text-[11px] text-amber-400 font-extrabold">{serverIp}</span>
-              <Edit2 className="w-3 h-3 text-slate-500 group-hover:text-amber-400 transition" />
+              <Server className="w-3.5 h-3.5 text-amber-500 group-hover:scale-110 transition flex-shrink-0" />
+              <span className="font-bold text-[11px] hidden xs:inline flex-shrink-0">Server:</span>
+              <span className="font-mono text-[11px] text-amber-400 font-extrabold truncate">{serverIp}</span>
+              <Edit2 className="w-3 h-3 text-slate-500 group-hover:text-amber-400 transition flex-shrink-0" />
             </button>
 
             {/* Simple Red / Yellow / Green Status Indicator */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-bold">
+            <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-bold flex-shrink-0">
               {connectionStatus.isChecking || isSyncing ? (
                 <>
                   <span className="relative flex h-2.5 w-2.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400"></span>
                   </span>
-                  <span className="text-amber-400 font-extrabold">Checking...</span>
+                  <span className="text-amber-400 font-extrabold hidden xs:inline">Checking...</span>
                 </>
               ) : connectionStatus.isOnline ? (
                 <>
@@ -140,24 +140,24 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                   </span>
-                  <span className="text-emerald-400 font-extrabold">Connected</span>
+                  <span className="text-emerald-400 font-extrabold hidden xs:inline">Connected</span>
                 </>
               ) : (
                 <>
                   <span className="relative flex h-2.5 w-2.5">
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
                   </span>
-                  <span className="text-rose-400 font-extrabold">Offline</span>
+                  <span className="text-rose-400 font-extrabold hidden xs:inline">Offline</span>
                 </>
               )}
             </div>
           </div>
 
           {/* Sync Icon Button */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             {pendingCount > 0 && (
-              <span className="bg-amber-500/20 text-amber-400 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-500/30 animate-pulse">
-                {pendingCount} Pending
+              <span className="bg-amber-500/20 text-amber-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-500/30 animate-pulse">
+                {pendingCount}
               </span>
             )}
 
