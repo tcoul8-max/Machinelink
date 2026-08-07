@@ -31,7 +31,7 @@ export default function App() {
         saveSavedMachines(mData);
       }
 
-      await syncDefectsFromServer();
+      await syncDefectsFromServer(targetIp);
     } catch (e) {
       console.log('Using local cached master lists (offline/initial startup)');
     }
