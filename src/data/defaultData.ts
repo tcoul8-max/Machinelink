@@ -1,83 +1,56 @@
 import { Machine, Worker, CheckItemDefinition, PrestartTypeDefinition, PrestartTemplateStore, DocketTemplateConfig } from '../types';
 
 export const INITIAL_WORKERS: Worker[] = [
-  { id: 'w1', name: 'Name 1', role: 'Senior Plant Operator', pin: '1234', phone: '0412 888 101', active: true },
-  { id: 'w2', name: 'Name 2', role: 'Excavator & Loader Operator', pin: '2345', phone: '0423 999 202', active: true },
-  { id: 'w3', name: 'Name 3', role: 'Heavy Diesel Fitter & Operator', pin: '3456', phone: '0434 111 303', active: true },
-  { id: 'w4', name: 'Name 4', role: 'Site Supervisor', pin: '4567', phone: '0445 222 404', active: true },
+  { id: 'w1', name: 'Demo Name 1', role: 'Plant Operator', pin: '1111', phone: '0400 000 001', active: true },
+  { id: 'w2', name: 'Demo Name 2', role: 'Loader Operator', pin: '2222', phone: '0400 000 002', active: true },
+  { id: 'w3', name: 'Demo Name 3', role: 'Heavy Diesel Fitter & Operator', pin: '3333', phone: '0400 000 003', active: true },
+  { id: 'w4', name: 'Demo Name 4', role: 'Site Supervisor', pin: '4444', phone: '0400 000 004', active: true },
 ];
 
 export const INITIAL_MACHINES: Machine[] = [
   {
     id: 'm1',
-    unitCode: 'EX-201',
-    name: 'CAT 320 Next Gen Excavator (Tracked)',
-    regoOrSerial: 'CAT0320T-98812',
+    unitCode: 'DEMO1',
+    name: 'Excavator',
+    regoOrSerial: '5739593667',
     prestartType: 2, // Tracked Heavy
     currentHours: 1420.5,
     status: 'Operational',
   },
   {
     id: 'm2',
-    unitCode: 'LD-104',
-    name: 'Komatsu WA380 Wheel Loader',
-    regoOrSerial: 'KMT-WA380-4519',
+    unitCode: 'DEMO2',
+    name: 'Wheel Loader',
+    regoOrSerial: '14579076429',
     prestartType: 1, // Wheeled Heavy
     currentHours: 3890.0,
     status: 'Operational',
   },
   {
     id: 'm3',
-    unitCode: 'DZ-05',
-    name: 'CAT D6 Dozer (Tracked)',
-    regoOrSerial: 'CAT-D6T-33201',
+    unitCode: 'DEMO3',
+    name: 'Dozer',
+    regoOrSerial: '67349294756',
     prestartType: 2, // Tracked Heavy
     currentHours: 2150.2,
     status: 'Operational',
   },
   {
     id: 'm4',
-    unitCode: 'BH-02',
-    name: 'JCB 3CX Backhoe Loader (Wheeled)',
-    regoOrSerial: 'JCB-3CX-78291',
+    unitCode: 'DEMO4',
+    name: 'Backhoe Loader',
+    regoOrSerial: '124567890786',
     prestartType: 1, // Wheeled Heavy
     currentHours: 890.4,
     status: 'Requires Service',
   },
   {
     id: 'm5',
-    unitCode: 'UTE-09',
-    name: 'Toyota Hilux 4x4 Field Service Ute',
-    regoOrSerial: '1GXX-882 (WA)',
+    unitCode: 'DEMO5',
+    name: 'Toyota Hilux',
+    regoOrSerial: 'aaa111 (QLD)',
     prestartType: 3, // Light Vehicles
     currentHours: 124500, // km / hours
-    status: 'Operational',
-  },
-  {
-    id: 'm6',
-    unitCode: 'GEN-01',
-    name: 'Denyo 100kVA Field Diesel Generator',
-    regoOrSerial: 'DNY-100KVA-9012',
-    prestartType: 4, // Stationary / Power
-    currentHours: 3400.0,
-    status: 'Operational',
-  },
-  {
-    id: 'm7',
-    unitCode: 'RLR-03',
-    name: 'Bomag BW213 Smooth Drum Roller',
-    regoOrSerial: 'BMG-213D-8821',
-    prestartType: 5, // Rollers & Compaction
-    currentHours: 1120.0,
-    status: 'Operational',
-  },
-  {
-    id: 'm8',
-    unitCode: 'TH-01',
-    name: 'Manitou 4T Field Telehandler',
-    regoOrSerial: 'MNT-4017-3391',
-    prestartType: 6, // Cranes & EWPs
-    currentHours: 1850.5,
     status: 'Operational',
   }
 ];
