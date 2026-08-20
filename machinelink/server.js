@@ -371,7 +371,107 @@ app.post('/api/master/workers', (req, res) => {
 app.get('/api/reports/prestarts.csv', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="prestarts_master.csv"');
-  res.sendFile(PRESTARTS_CSV_PATH);
+  if (fs.existsSync(PRESTARTS_CSV_PATH)) {
+    res.sendFile(PRESTARTS_CSV_PATH);
+  } else {
+    res.send('Submission_ID,Timestamp,Date,Worker_Name,Machine_Code,Machine_Name,Prestart_Type,Engine_Hours,Overall_Status,Notes,Has_Defects\n');
+  }
+});
+
+app.get('/api/reports/machines.csv', (req, res) => {
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="machinery_fleet_master.csv"');
+  if (fs.existsSync(MACHINES_CSV_PATH)) {
+    res.sendFile(MACHINES_CSV_PATH);
+  } else {
+    saveMachines(DEFAULT_MACHINES);
+    res.sendFile(MACHINES_CSV_PATH);
+  }
+});
+
+// 9. Full System Diagnostics
+app.get('/api/admin/diagnostics', (req, res) => {
+  const machines = getMachines();
+  const dockets = getDockets();
+  
+  let prestartsCount = 0;
+  if (fs.existsSync(PRESTARTS_CSV_PATH)) {
+    try {
+      const content = fs.readFileSync(PRESTARTS_CSV_PATH, 'utf-8');
+      prestartsCount = Math.max(0, content.split('\n').filter(l => l.trim()).length - 1);
+    } catch (e) {}
+  }
+
+  const machineCodes = machines.map(m => (m.unitCode || m.id || '').toUpperCase());
+  const uniqueMachineCodes = new Set(machineCodes);
+  const duplicateMachinesCount = machineCodes.length - uniqueMachineCodes.size;
+
+  res.json({
+    timestamp: new Date().toISOString(),
+    status: duplicateMachinesCount === 0 ? 'HEALTHY' : 'REPAIR_RECOMMENDED',
+    machines: {
+      totalCount: machines.length,
+      uniqueCount: uniqueMachineCodes.size,
+      duplicateCount: duplicateMachinesCount,
+      csvPath: MACHINES_CSV_PATH,
+      exists: fs.existsSync(MACHINES_CSV_PATH)
+    },
+    prestarts: {
+      totalCount: prestartsCount,
+      csvPath: PRESTARTS_CSV_PATH,
+      exists: fs.existsSync(PRESTARTS_CSV_PATH)
+    },
+    dockets: {
+      totalCount: dockets.length,
+      jsonPath: DOCKETS_JSON_PATH,
+      exists: fs.existsSync(DOCKETS_JSON_PATH)
+    }
+  });
+});
+
+// 10. Admin Repair: Machines
+app.post('/api/admin/repair/machines', (req, res) => {
+  const { resetToFactory = false } = req.body || {};
+
+  // Backup current CSV before modifying
+  try {
+    if (fs.existsSync(MACHINES_CSV_PATH)) {
+      const bkpPath = path.join(STORAGE_DIR, `machines_backup_${Date.now()}.csv`);
+      fs.copyFileSync(MACHINES_CSV_PATH, bkpPath);
+    }
+  } catch (e) {}
+
+  let finalMachines;
+  if (resetToFactory) {
+    finalMachines = [...DEFAULT_MACHINES];
+  } else {
+    const existing = getMachines();
+    finalMachines = deduplicateMachinesList([...DEFAULT_MACHINES, ...existing]);
+  }
+
+  saveMachines(finalMachines);
+
+  res.json({
+    success: true,
+    message: resetToFactory
+      ? 'Fleet successfully reset to clean factory defaults on PM2 server.'
+      : 'Fleet successfully verified and deduplicated on PM2 server.',
+    resetToFactory,
+    machines: getMachines()
+  });
+});
+
+// 11. Admin Repair: Full
+app.post('/api/admin/repair/full', (req, res) => {
+  const existingMachines = getMachines();
+  const cleanMachines = deduplicateMachinesList([...DEFAULT_MACHINES, ...existingMachines]);
+  saveMachines(cleanMachines);
+
+  res.json({
+    success: true,
+    message: 'All files repaired and deduplicated successfully on PM2 server.',
+    machinesCount: cleanMachines.length
+  });
 });
 
 app.listen(PORT, '0.0.0.0', () => {

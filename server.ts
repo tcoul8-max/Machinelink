@@ -1136,6 +1136,334 @@ app.get('/api/reports/prestarts.csv', async (req, res) => {
   res.send(csvData);
 });
 
+// Download machines raw CSV file
+app.get('/api/reports/machines.csv', async (req, res) => {
+  const targetIp = (req.query.ip as string || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const r = await fetch(`${targetUrl}/api/reports/machines.csv`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const csvData = await r.text();
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="machinery_fleet_master.csv"');
+        return res.send(csvData);
+      }
+    } catch (e) {
+      // Fallback
+    }
+  }
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="machinery_fleet_master.csv"');
+  
+  let csvData = '';
+  const possiblePaths = [
+    '/home/tristan/machinelink/machines.csv',
+    path.join(__dirname, 'server_storage', 'machines.csv'),
+    path.join(__dirname, 'machinelink', 'machines.csv')
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        csvData = fs.readFileSync(p, 'utf-8');
+        if (csvData && csvData.trim()) break;
+      } catch (e) {}
+    }
+  }
+
+  if (!csvData) {
+    const machines = getMachines();
+    csvData = 'id,unitCode,name,regoOrSerial,prestartType,currentHours,status,usageUnit,nextServiceDue,serviceInterval,lastServiceDate,lastServiceHours\n';
+    machines.forEach((m: any) => {
+      csvData += `"${m.id || ''}","${m.unitCode || ''}","${(m.name || '').replace(/"/g, '""')}","${m.regoOrSerial || m.rego || ''}",${m.prestartType || 1},${m.currentHours !== undefined ? m.currentHours : 0},"${m.status || 'Operational'}","${m.usageUnit || 'Hours'}",${m.nextServiceDue !== undefined && !isNaN(m.nextServiceDue) ? m.nextServiceDue : ''},${m.serviceInterval || 250},"${m.lastServiceDate || ''}",${m.lastServiceHours !== undefined && !isNaN(m.lastServiceHours) ? m.lastServiceHours : ''}\n`;
+    });
+  }
+
+  res.send(csvData);
+});
+
+// View machines CSV as JSON
+app.get('/api/machines/csv-data', async (req, res) => {
+  const targetIp = (req.query.ip as string || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const r = await fetch(`${targetUrl}/api/machines/csv-data`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Fallback
+    }
+  }
+
+  const machines = getMachines();
+  const headers = ['id', 'unitCode', 'name', 'regoOrSerial', 'prestartType', 'currentHours', 'status', 'usageUnit', 'nextServiceDue', 'serviceInterval', 'lastServiceDate', 'lastServiceHours'];
+  const rows = machines.map((m: any) => [
+    m.id || '',
+    m.unitCode || '',
+    m.name || '',
+    m.regoOrSerial || m.rego || '',
+    String(m.prestartType || 1),
+    String(m.currentHours !== undefined ? m.currentHours : 0),
+    m.status || 'Operational',
+    m.usageUnit || 'Hours',
+    m.nextServiceDue !== undefined && !isNaN(m.nextServiceDue) ? String(m.nextServiceDue) : '',
+    String(m.serviceInterval || 250),
+    m.lastServiceDate || '',
+    m.lastServiceHours !== undefined && !isNaN(m.lastServiceHours) ? String(m.lastServiceHours) : ''
+  ]);
+  res.json({ headers, rows, count: machines.length });
+});
+
+// Full System Diagnostics API
+app.get('/api/admin/diagnostics', async (req, res) => {
+  const targetIp = (req.query.ip as string || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const r = await fetch(`${targetUrl}/api/admin/diagnostics`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Fallback
+    }
+  }
+
+  const machines = getMachines();
+  const prestarts = getPrestarts();
+  const dockets = getDockets();
+  const defects = getDefects();
+  const services = getServices();
+
+  const machineCodes = machines.map((m: any) => (m.unitCode || m.id || '').toUpperCase());
+  const uniqueMachineCodes = new Set(machineCodes);
+  const duplicateMachinesCount = machineCodes.length - uniqueMachineCodes.size;
+
+  const prestartIds = prestarts.map((p: any) => p.id);
+  const uniquePrestartIds = new Set(prestartIds);
+  const duplicatePrestartsCount = prestartIds.length - uniquePrestartIds.size;
+
+  res.json({
+    timestamp: new Date().toISOString(),
+    status: duplicateMachinesCount === 0 && duplicatePrestartsCount === 0 ? 'HEALTHY' : 'REPAIR_RECOMMENDED',
+    machines: {
+      totalCount: machines.length,
+      uniqueCount: uniqueMachineCodes.size,
+      duplicateCount: duplicateMachinesCount,
+      jsonPath: MACHINES_JSON_PATH,
+      exists: fs.existsSync(MACHINES_JSON_PATH)
+    },
+    prestarts: {
+      totalCount: prestarts.length,
+      uniqueCount: uniquePrestartIds.size,
+      duplicateCount: duplicatePrestartsCount,
+      csvPath: PRESTARTS_CSV_PATH,
+      exists: fs.existsSync(PRESTARTS_CSV_PATH)
+    },
+    dockets: {
+      totalCount: dockets.length,
+      jsonPath: DOCKETS_JSON_PATH,
+      exists: fs.existsSync(DOCKETS_JSON_PATH)
+    },
+    defects: {
+      totalCount: defects.length,
+      openCount: defects.filter((d: any) => d.status !== 'REPAIRED').length,
+    },
+    services: {
+      totalCount: services.length,
+    }
+  });
+});
+
+// Admin Repair: Machines (Deep clean & deduplicate OR Factory Reset)
+app.post('/api/admin/repair/machines', async (req, res) => {
+  const targetIp = (req.query.ip as string || req.body?.ip || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const r = await fetch(`${targetUrl}/api/admin/repair/machines`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Fallback
+    }
+  }
+
+  const { resetToFactory = false } = req.body || {};
+
+  // Backup current file before making changes
+  try {
+    const backupDir = path.join(__dirname, 'server_storage');
+    if (fs.existsSync(MACHINES_JSON_PATH)) {
+      const bkpPath = path.join(backupDir, `machines_backup_${Date.now()}.json`);
+      fs.copyFileSync(MACHINES_JSON_PATH, bkpPath);
+    }
+  } catch (e) {
+    console.warn('Could not create backup:', e);
+  }
+
+  let finalMachines: any[];
+  if (resetToFactory) {
+    finalMachines = [...INITIAL_MACHINES];
+  } else {
+    // Deep repair existing
+    const existing = getMachines();
+    const mergedWithDefaults = [...INITIAL_MACHINES, ...existing];
+    finalMachines = deduplicateMachinesList(mergedWithDefaults);
+  }
+
+  saveMachines(finalMachines);
+
+  res.json({
+    success: true,
+    message: resetToFactory
+      ? 'Fleet successfully reset to clean factory defaults on server tower.'
+      : 'Fleet successfully verified, deduplicated and synchronized on server tower.',
+    resetToFactory,
+    machines: getMachines()
+  });
+});
+
+// Admin Repair: Prestarts CSV & JSON
+app.post('/api/admin/repair/prestarts', async (req, res) => {
+  const targetIp = (req.query.ip as string || req.body?.ip || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const r = await fetch(`${targetUrl}/api/admin/repair/prestarts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Fallback
+    }
+  }
+
+  const existingPrestarts = getPrestarts();
+  const map = new Map<string, any>();
+  for (const p of existingPrestarts) {
+    if (p && p.id) {
+      if (map.has(p.id)) {
+        map.set(p.id, { ...map.get(p.id), ...p });
+      } else {
+        map.set(p.id, p);
+      }
+    }
+  }
+
+  const dedupedPrestarts = Array.from(map.values());
+  savePrestarts(dedupedPrestarts);
+
+  // Re-write clean CSV
+  try {
+    const header = 'Submission_ID,Timestamp,Date,Worker_Name,Machine_Code,Machine_Name,Prestart_Type,Engine_Hours,Overall_Status,Engine_Oil,Hydraulic_Oil,Coolant,Transmission_Drive_Oil,Fuel_Water_Trap,Tracks_Undercarriage,Tires_Wheel_Nuts,Steering_Linkages,Brakes_Park_Brake,Air_Cleaner,Bucket_Pins_Attachment,Lights_Beacons,Seatbelt,Mirrors_Glass,Fire_Extinguisher,Horn_Reverse_Alarm,Controls_EStop,General_Notes,Operator_Signature_Attached\n';
+    let csvRows = '';
+    for (const p of dedupedPrestarts) {
+      const getStatus = (itemId: string) => {
+        if (!p.checks || !p.checks[itemId]) return 'N/A';
+        const c = p.checks[itemId];
+        return c.notes ? `${c.status} (${c.notes.replace(/"/g, '""')})` : c.status;
+      };
+      const cleanNotes = (p.generalNotes || '').replace(/"/g, '""').replace(/[\r\n]/g, ' ');
+      csvRows += `"${p.id}","${p.syncedAt || new Date().toISOString()}","${p.date || ''}","${p.workerName || ''}","${p.machineCode || ''}","${(p.machineName || '').replace(/"/g, '""')}","Type ${p.prestartType || 1}",${p.engineHours || 0},"${p.overallStatus || 'SAFE_TO_OPERATE'}","${getStatus('engine_oil')}","${getStatus('hydraulic_oil')}","${getStatus('coolant')}","${getStatus('transmission_oil')}","${getStatus('fuel_level')}","${getStatus('tracks')}","${getStatus('tires')}","${getStatus('steering')}","${getStatus('brakes')}","${getStatus('air_cleaner')}","${getStatus('attachment_bucket')}","${getStatus('lights_beacons')}","${getStatus('seatbelt')}","${getStatus('mirrors_glass')}","${getStatus('fire_extinguisher')}","${getStatus('horn_beeper')}","${getStatus('controls_estop')}","${cleanNotes}","${p.signatureDataUrl ? 'YES' : 'NO'}"\n`;
+    }
+    fs.writeFileSync(PRESTARTS_CSV_PATH, header + csvRows, 'utf-8');
+  } catch (e) {
+    console.error('Error rebuilding prestarts CSV:', e);
+  }
+
+  res.json({
+    success: true,
+    message: 'Prestart inspection records and CSV rebuilt and deduplicated.',
+    count: dedupedPrestarts.length
+  });
+});
+
+// Admin Repair: Full System Repair
+app.post('/api/admin/repair/full', async (req, res) => {
+  const targetIp = (req.query.ip as string || req.body?.ip || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const r = await fetch(`${targetUrl}/api/admin/repair/full`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Fallback
+    }
+  }
+
+  // 1. Repair machines
+  const existingMachines = getMachines();
+  const cleanMachines = deduplicateMachinesList([...INITIAL_MACHINES, ...existingMachines]);
+  saveMachines(cleanMachines);
+
+  // 2. Repair prestarts
+  const prestarts = getPrestarts();
+  const pMap = new Map<string, any>();
+  prestarts.forEach((p: any) => { if (p && p.id) pMap.set(p.id, p); });
+  const cleanPrestarts = Array.from(pMap.values());
+  savePrestarts(cleanPrestarts);
+
+  // 3. Repair dockets
+  const dockets = getDockets();
+  const dMap = new Map<string, any>();
+  dockets.forEach((d: any) => { if (d && d.id) dMap.set(d.id, d); });
+  const cleanDockets = Array.from(dMap.values());
+  saveDockets(cleanDockets);
+
+  res.json({
+    success: true,
+    message: 'All system files (Machines, Prestarts, Dockets) repaired, deduplicated, and synchronized.',
+    machinesCount: cleanMachines.length,
+    prestartsCount: cleanPrestarts.length,
+    docketsCount: cleanDockets.length
+  });
+});
+
 // View CSV content as JSON for the server tower dashboard
 app.get('/api/prestarts/csv-data', async (req, res) => {
   const targetIp = (req.query.ip as string || '').trim();

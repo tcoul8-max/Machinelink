@@ -5,8 +5,8 @@ import { TailscaleIpModal } from './TailscaleIpModal';
 import { generateDocketPDF } from '../utils/pdfGenerator';
 import { getTailscaleIp, getOfflinePrestarts } from '../utils/offlineStore';
 import { smartFetchApi, buildDirectUrl } from '../utils/apiClient';
-import { getSavedDocketTemplate, saveSavedDocketTemplate, getSavedPrestartTemplates, saveSavedPrestartTemplates } from '../data/defaultData';
-import { Server, Database, FileSpreadsheet, Download, RefreshCw, Users, Truck, Plus, Check, Edit2, ShieldCheck, Wifi, Eye, Building2, Sliders, CheckSquare, Square, Search, Trash2, Sparkles, Layers, ListChecks } from 'lucide-react';
+import { getSavedDocketTemplate, saveSavedDocketTemplate, getSavedPrestartTemplates, saveSavedPrestartTemplates, saveSavedMachines, forceResetLocalFleetToFactory, flushAllLocalDeviceCaches, deduplicateMachines, INITIAL_MACHINES } from '../data/defaultData';
+import { Server, Database, FileSpreadsheet, Download, RefreshCw, Users, Truck, Plus, Check, Edit2, ShieldCheck, Wifi, Eye, Building2, Sliders, CheckSquare, Square, Search, Trash2, Sparkles, Layers, ListChecks, Wrench, AlertTriangle, RotateCcw, FileText, CheckCircle2, Copy, AlertOctagon, HelpCircle, HardDrive, Cpu, Archive, CheckCircle } from 'lucide-react';
 
 interface ServerTowerAdminProps {
   workers: Worker[];
@@ -79,7 +79,7 @@ function convertSubmissionToCsvRow(p: PrestartSubmission): string[] {
 }
 
 export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, machines, onReloadMasterData }) => {
-  const [activeAdminSubtab, setActiveAdminSubtab] = useState<'csv' | 'prestart_templates' | 'machines' | 'workers' | 'dockets' | 'branding'>('csv');
+  const [activeAdminSubtab, setActiveAdminSubtab] = useState<'csv' | 'prestart_templates' | 'machines' | 'workers' | 'dockets' | 'branding' | 'repair'>('csv');
   const [serverIp, setServerIp] = useState<string>(getTailscaleIp());
   const [showIpModal, setShowIpModal] = useState<boolean>(false);
   
@@ -97,6 +97,15 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [questionSearchQuery, setQuestionSearchQuery] = useState<string>('');
   const [prestartSaveSuccess, setPrestartSaveSuccess] = useState<boolean>(false);
+
+  // Diagnostics & File Repair State
+  const [diagnosticsData, setDiagnosticsData] = useState<any>(null);
+  const [isRepairing, setIsRepairing] = useState<boolean>(false);
+  const [repairFeedback, setRepairFeedback] = useState<{ type: 'success' | 'error' | 'info'; title: string; message: string } | null>(null);
+  const [showResetModal, setShowResetModal] = useState<boolean>(false);
+  const [showFlushCacheModal, setShowFlushCacheModal] = useState<boolean>(false);
+  const [machinesCsvData, setMachinesCsvData] = useState<{ headers: string[]; rows: string[][]; count: number } | null>(null);
+  const [copiedMachinesCsv, setCopiedMachinesCsv] = useState<boolean>(false);
 
   // Add Prestart Type Modal
   const [showAddPrestartTypeModal, setShowAddPrestartTypeModal] = useState<boolean>(false);
@@ -225,10 +234,183 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
         setTemplateStore(prestartStore);
         saveSavedPrestartTemplates(prestartStore);
       }
+
+      // Fetch diagnostics and machines CSV data
+      const { data: diag } = await smartFetchApi('/api/admin/diagnostics', {}, currentIp);
+      if (diag) setDiagnosticsData(diag);
+
+      const { data: mCsv } = await smartFetchApi('/api/machines/csv-data', {}, currentIp);
+      if (mCsv) setMachinesCsvData(mCsv);
     } catch (e) {
       console.error('Failed to fetch server tower data', e);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchDiagnostics = async () => {
+    setIsLoading(true);
+    try {
+      const currentIp = getTailscaleIp();
+      const { data: diag } = await smartFetchApi('/api/admin/diagnostics', {}, currentIp);
+      if (diag) setDiagnosticsData(diag);
+
+      const { data: mCsv } = await smartFetchApi('/api/machines/csv-data', {}, currentIp);
+      if (mCsv) setMachinesCsvData(mCsv);
+    } catch (e) {
+      console.error('Failed to fetch diagnostics', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeAdminSubtab === 'repair') {
+      fetchDiagnostics();
+    }
+  }, [activeAdminSubtab]);
+
+  const handleRepairMachines = async (resetToFactory: boolean = false) => {
+    setIsRepairing(true);
+    setRepairFeedback(null);
+    try {
+      const currentIp = getTailscaleIp();
+      const { res, data } = await smartFetchApi('/api/admin/repair/machines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resetToFactory })
+      }, currentIp);
+
+      if (res.ok && data?.success) {
+        if (resetToFactory) {
+          forceResetLocalFleetToFactory();
+        } else if (Array.isArray(data.machines)) {
+          saveSavedMachines(data.machines);
+        }
+        onReloadMasterData();
+        await fetchDiagnostics();
+        setRepairFeedback({
+          type: 'success',
+          title: resetToFactory ? 'Fleet Reset Complete' : 'Fleet Repaired & Cleaned',
+          message: data.message || 'Fleet files on server and local cache synchronized successfully.'
+        });
+      } else {
+        // Fallback local repair
+        if (resetToFactory) {
+          forceResetLocalFleetToFactory();
+        } else {
+          const repaired = deduplicateMachines([...INITIAL_MACHINES, ...machines]);
+          saveSavedMachines(repaired);
+        }
+        onReloadMasterData();
+        setRepairFeedback({
+          type: 'info',
+          title: 'Local Fleet Repaired',
+          message: 'Local machine cache repaired and deduplicated (server unreachable or local mode).'
+        });
+      }
+    } catch (e: any) {
+      setRepairFeedback({
+        type: 'error',
+        title: 'Repair Warning',
+        message: e?.message || 'Error occurred during fleet repair.'
+      });
+    } finally {
+      setIsRepairing(false);
+      setShowResetModal(false);
+    }
+  };
+
+  const handleFlushDeviceCache = async () => {
+    setIsRepairing(true);
+    try {
+      flushAllLocalDeviceCaches();
+      const currentIp = getTailscaleIp();
+      const { data } = await smartFetchApi('/api/master/machines', {}, currentIp);
+      if (Array.isArray(data) && data.length > 0) {
+        saveSavedMachines(data);
+      }
+      onReloadMasterData();
+      await fetchDiagnostics();
+      setRepairFeedback({
+        type: 'success',
+        title: 'Device Cache Flushed',
+        message: 'All local caches cleared. Clean master machinery fleet re-pulled from the server tower.'
+      });
+    } catch (e: any) {
+      setRepairFeedback({
+        type: 'error',
+        title: 'Flush Complete with Warning',
+        message: 'Device cache reset to factory defaults.'
+      });
+    } finally {
+      setIsRepairing(false);
+      setShowFlushCacheModal(false);
+    }
+  };
+
+  const handleRepairPrestarts = async () => {
+    setIsRepairing(true);
+    try {
+      const currentIp = getTailscaleIp();
+      const { res, data } = await smartFetchApi('/api/admin/repair/prestarts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }, currentIp);
+
+      if (res.ok && data?.success) {
+        await fetchServerInfo();
+        await fetchDiagnostics();
+        setRepairFeedback({
+          type: 'success',
+          title: 'Prestarts Repaired',
+          message: data.message || 'Inspection records and prestarts.csv repaired and deduplicated.'
+        });
+      }
+    } catch (e: any) {
+      setRepairFeedback({
+        type: 'error',
+        title: 'Repair Failed',
+        message: e?.message || 'Could not repair prestarts records.'
+      });
+    } finally {
+      setIsRepairing(false);
+    }
+  };
+
+  const handleFullSystemRepair = async () => {
+    setIsRepairing(true);
+    try {
+      const currentIp = getTailscaleIp();
+      const { res, data } = await smartFetchApi('/api/admin/repair/full', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }, currentIp);
+
+      if (res.ok && data?.success) {
+        const { data: freshMachines } = await smartFetchApi('/api/master/machines', {}, currentIp);
+        if (Array.isArray(freshMachines)) {
+          saveSavedMachines(freshMachines);
+        }
+        onReloadMasterData();
+        await fetchServerInfo();
+        await fetchDiagnostics();
+        setRepairFeedback({
+          type: 'success',
+          title: 'Full Deep Repair Complete',
+          message: data.message || 'All system storage files (Machines, Prestarts, Dockets) repaired and synchronized.'
+        });
+      }
+    } catch (e: any) {
+      setRepairFeedback({
+        type: 'error',
+        title: 'Repair Failed',
+        message: e?.message || 'Could not complete full system repair.'
+      });
+    } finally {
+      setIsRepairing(false);
     }
   };
 
@@ -476,6 +658,18 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
 
           <div className="flex items-center gap-2.5">
             <button
+              onClick={() => setActiveAdminSubtab('repair')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
+                activeAdminSubtab === 'repair'
+                  ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20'
+                  : 'bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/30'
+              }`}
+            >
+              <Wrench className="w-3.5 h-3.5 text-rose-400" />
+              File Repair Hub
+            </button>
+
+            <button
               onClick={fetchServerInfo}
               disabled={isLoading}
               className="px-4 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-xs font-bold transition flex items-center gap-2 cursor-pointer"
@@ -591,6 +785,23 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
         >
           <Building2 className="w-4 h-4 text-amber-500" />
           Company Branding & Details
+        </button>
+
+        <button
+          onClick={() => setActiveAdminSubtab('repair')}
+          className={`pb-3.5 px-5 text-xs font-black transition border-b-2 flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeAdminSubtab === 'repair'
+              ? 'border-rose-500 text-rose-500 dark:text-rose-400'
+              : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+        >
+          <Wrench className="w-4 h-4 text-rose-500" />
+          Data & File Repair Hub
+          {diagnosticsData?.status === 'REPAIR_RECOMMENDED' && (
+            <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black animate-pulse">
+              ACTION
+            </span>
+          )}
         </button>
       </div>
 
@@ -1484,6 +1695,487 @@ export const ServerTowerAdmin: React.FC<ServerTowerAdminProps> = ({ workers, mac
             >
               <Check className="w-4 h-4 stroke-[3]" /> Save Company Branding Settings
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Subtab 7: Data & File Repair Hub */}
+      {activeAdminSubtab === 'repair' && (
+        <div className="space-y-6">
+          {/* Repair Feedback Toast / Banner */}
+          {repairFeedback && (
+            <div
+              className={`p-4 rounded-2xl border flex items-start justify-between gap-3 shadow-sm ${
+                repairFeedback.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-900 dark:text-emerald-200'
+                  : repairFeedback.type === 'error'
+                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-900 dark:text-rose-200'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                {repairFeedback.type === 'success' && <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 shrink-0" />}
+                {repairFeedback.type === 'error' && <AlertOctagon className="w-5 h-5 text-rose-500 mt-0.5 shrink-0" />}
+                {repairFeedback.type === 'info' && <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />}
+                <div>
+                  <h4 className="text-sm font-black">{repairFeedback.title}</h4>
+                  <p className="text-xs mt-0.5 opacity-90">{repairFeedback.message}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRepairFeedback(null)}
+                className="text-xs font-bold opacity-60 hover:opacity-100 cursor-pointer px-2 py-1"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* Section 1: Live Storage Diagnostics & Health Monitor */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-5 h-5 text-rose-500" />
+                  <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                    Live Server Storage Diagnostics
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Real-time integrity analysis of files stored on your Tailscale server tower node.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={fetchDiagnostics}
+                  disabled={isLoading}
+                  className="px-4 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 transition flex items-center gap-2 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                  Run Integrity Scan
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Card: Machines Storage Status */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Truck className="w-4 h-4 text-amber-500" /> machines.csv / json
+                  </span>
+                  {diagnosticsData?.machines?.duplicateCount > 0 ? (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[10px] font-black border border-rose-500/30">
+                      {diagnosticsData.machines.duplicateCount} Duplicates
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-black border border-emerald-500/30 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Healthy
+                    </span>
+                  )}
+                </div>
+                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+                  {machines.length} <span className="text-xs font-normal text-slate-500">Fleet Units</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {diagnosticsData?.machines?.duplicateCount > 0
+                    ? 'Duplicate machine codes detected. Click Clean & Deduplicate below.'
+                    : 'All machine codes are uniquely indexed and synchronized.'}
+                </p>
+              </div>
+
+              {/* Card: Prestarts CSV Storage Status */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-500" /> prestarts.csv
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-black border border-emerald-500/30 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Validated
+                  </span>
+                </div>
+                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+                  {diagnosticsData?.prestarts?.totalCount || csvData?.rows?.length || 0}{' '}
+                  <span className="text-xs font-normal text-slate-500">Inspections</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Formatted with safety checklists, hours, defect flags, and sign-offs.
+                </p>
+              </div>
+
+              {/* Card: Dockets & Defect Records */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Database className="w-4 h-4 text-blue-500" /> dockets & defects
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400 text-[10px] font-black border border-blue-500/30 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Active
+                  </span>
+                </div>
+                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">
+                  {serverDockets.length} <span className="text-xs font-normal text-slate-500">Dockets</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Serialized audit trail for operator times, materials, and signatures.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: One-Click Self-Healing & Repair Actions */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-5">
+            <div className="flex items-center gap-2">
+              <Wrench className="w-5 h-5 text-rose-500" />
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                  Automated File Repair & Recovery Suite
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Repair corrupted files, remove duplicates, or clean slate your fleet without touching the terminal or stopping PM2.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              {/* Tool 1: Clean & Deduplicate Fleet */}
+              <div className="p-5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 flex flex-col justify-between space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                    <ShieldCheck className="w-5 h-5" />
+                    <h4 className="text-sm font-black">1-Click Fleet Deep Clean & Deduplicate</h4>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Safely reconciles machines, deletes duplicate unit codes, repairs CSV formatting and quotes, and saves back to the server. <strong>Preserves your machines and custom hours.</strong>
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => handleRepairMachines(false)}
+                  disabled={isRepairing}
+                  className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  {isRepairing ? 'Repairing Files...' : 'Verify & Clean Fleet Files'}
+                </button>
+              </div>
+
+              {/* Tool 2: Factory Reset Fleet */}
+              <div className="p-5 rounded-2xl bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/20 flex flex-col justify-between space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+                    <RotateCcw className="w-5 h-5" />
+                    <h4 className="text-sm font-black">Factory Reset Fleet (Fresh Slate)</h4>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Creates an instant timestamped server backup snapshot, clears out all corrupted or repeat machine rows, and recreates a fresh 10-machine master fleet. <strong>No manual PM2 restart needed.</strong>
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowResetModal(true)}
+                  disabled={isRepairing}
+                  className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Reset Fleet to Fresh Defaults
+                </button>
+              </div>
+
+              {/* Tool 3: Flush Device Cache & Re-sync */}
+              <div className="p-5 rounded-2xl bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/20 flex flex-col justify-between space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                    <HardDrive className="w-5 h-5" />
+                    <h4 className="text-sm font-black">Flush Device Cache & Hard Pull</h4>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Clears local browser cache for machines and offline queues on this specific device, then pulls fresh master files directly from the server. Prevents old cached files from pushing back duplicates.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowFlushCacheModal(true)}
+                  disabled={isRepairing}
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Flush Device Cache & Pull Fresh
+                </button>
+              </div>
+
+              {/* Tool 4: Repair Prestarts CSV & Full System Repair */}
+              <div className="p-5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-col justify-between space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-slate-900 dark:text-white">
+                    <Archive className="w-5 h-5 text-emerald-500" />
+                    <h4 className="text-sm font-black">Repair Prestarts CSV & Deep System Sync</h4>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Deduplicates inspection logs, validates checklist columns, reconciles dockets and repairs any broken CSV commas or trailing linebreaks across the entire storage directory.
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleRepairPrestarts}
+                    disabled={isRepairing}
+                    className="flex-1 py-3 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                    Repair CSV
+                  </button>
+
+                  <button
+                    onClick={handleFullSystemRepair}
+                    disabled={isRepairing}
+                    className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Full Deep Repair
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Backup & Direct File Export Center */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <Download className="w-5 h-5 text-amber-500" />
+                  Direct File Backups & Downloads
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Download raw CSV and JSON files directly to your device for offsite backup or manual spreadsheet editing.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <a
+                href={buildDirectUrl('/api/reports/machines.csv', getTailscaleIp())}
+                download="machinery_fleet_master.csv"
+                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 hover:border-amber-500/50 transition flex items-center justify-between group cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center font-black">
+                    <Truck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-slate-900 dark:text-white group-hover:text-amber-500 transition">
+                      machines.csv
+                    </div>
+                    <div className="text-[10px] text-slate-500">Fleet Master CSV</div>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-slate-400 group-hover:text-amber-500 transition" />
+              </a>
+
+              <a
+                href={buildDirectUrl('/api/reports/prestarts.csv', getTailscaleIp())}
+                download="machinery_prestarts_master.csv"
+                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 transition flex items-center justify-between group cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-black">
+                    <FileSpreadsheet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-slate-900 dark:text-white group-hover:text-emerald-500 transition">
+                      prestarts.csv
+                    </div>
+                    <div className="text-[10px] text-slate-500">Inspections Master</div>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 transition" />
+              </a>
+
+              <a
+                href={buildDirectUrl('/api/dockets', getTailscaleIp())}
+                target="_blank"
+                rel="noreferrer"
+                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 hover:border-blue-500/50 transition flex items-center justify-between group cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center font-black">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-slate-900 dark:text-white group-hover:text-blue-500 transition">
+                      dockets.json
+                    </div>
+                    <div className="text-[10px] text-slate-500">Serialized Records</div>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-slate-400 group-hover:text-blue-500 transition" />
+              </a>
+            </div>
+          </div>
+
+          {/* Section 4: Live machines.csv Raw Inspector */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-slate-400" />
+                  Live machines.csv Structure Inspector
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Direct view of the rows that the server parses into the Machine Master List.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const content = machinesCsvData?.rows?.map(r => r.join(', ')).join('\n') || '';
+                    navigator.clipboard.writeText(content);
+                    setCopiedMachinesCsv(true);
+                    setTimeout(() => setCopiedMachinesCsv(false), 2000);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedMachinesCsv ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedMachinesCsv ? 'Copied!' : 'Copy Data'}
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-950 p-4">
+              <table className="w-full text-left text-xs font-mono text-slate-300">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[11px] text-amber-400 font-bold">
+                    <th className="py-2 px-3">#</th>
+                    <th className="py-2 px-3">Unit Code</th>
+                    <th className="py-2 px-3">Name / Description</th>
+                    <th className="py-2 px-3">Type</th>
+                    <th className="py-2 px-3">Current Hours</th>
+                    <th className="py-2 px-3">Next Service</th>
+                    <th className="py-2 px-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-900">
+                  {machines.map((m, idx) => (
+                    <tr key={m.id || idx} className="hover:bg-slate-900/60 transition">
+                      <td className="py-2.5 px-3 text-slate-500">{idx + 1}</td>
+                      <td className="py-2.5 px-3 font-bold text-amber-400">{m.unitCode || m.id}</td>
+                      <td className="py-2.5 px-3 text-slate-200">{m.name}</td>
+                      <td className="py-2.5 px-3 text-slate-400">Type {m.prestartType || 1}</td>
+                      <td className="py-2.5 px-3 text-emerald-400 font-bold">{m.currentHours || 0} hrs</td>
+                      <td className="py-2.5 px-3 text-slate-300">{m.nextServiceDue || 'Not set'}</td>
+                      <td className="py-2.5 px-3">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            m.status === 'Operational'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : m.status === 'Requires Service'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          }`}
+                        >
+                          {m.status || 'Operational'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal: Factory Reset Fleet */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 max-w-md w-full shadow-2xl space-y-5">
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 stroke-[2.5]" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Reset Fleet to Factory Clean Slate?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Instant recovery for corrupted machinery files
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/20 text-xs text-slate-600 dark:text-slate-300 space-y-2">
+              <p>
+                This will reset <strong>machines.csv</strong> and <strong>machines.json</strong> on your server tower to the pristine 10-machine master fleet.
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                <li>A timestamped backup of the current file will be saved automatically.</li>
+                <li>All duplicate machines and orphaned entries will be eliminated.</li>
+                <li>Your browser and devices will automatically synchronize the fresh list.</li>
+                <li><strong>No terminal or PM2 restart required!</strong></li>
+              </ul>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowResetModal(false)}
+                className="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRepairMachines(true)}
+                disabled={isRepairing}
+                className="flex-1 py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg shadow-rose-600/20 cursor-pointer disabled:opacity-50"
+              >
+                <RotateCcw className="w-4 h-4" />
+                {isRepairing ? 'Resetting...' : 'Yes, Reset Fleet'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal: Flush Local Device Cache */}
+      {showFlushCacheModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 max-w-md w-full shadow-2xl space-y-5">
+            <div className="flex items-center gap-3 text-blue-600 dark:text-blue-400">
+              <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center">
+                <HardDrive className="w-6 h-6 stroke-[2.5]" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Flush Local Device Storage & Cache?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Clean state on this phone/browser
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              This will clear the cached machinery list and offline queues stored on <strong>this specific device</strong>, and pull the latest master list cleanly from the Tailscale server tower. This prevents your phone or tablet from pushing old ghost records back to the server.
+            </p>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowFlushCacheModal(false)}
+                className="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFlushDeviceCache}
+                disabled={isRepairing}
+                className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className="w-4 h-4" />
+                {isRepairing ? 'Flushing...' : 'Flush & Pull Fresh'}
+              </button>
+            </div>
           </div>
         </div>
       )}

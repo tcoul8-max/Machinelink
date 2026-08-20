@@ -395,3 +395,44 @@ export function saveSavedMachines(machines: Machine[]): void {
     window.dispatchEvent(new CustomEvent('machines-updated'));
   }
 }
+
+/**
+ * Completely flushes local device cache for machines and resets to factory master list
+ * without deleting user settings or company branding.
+ */
+export function forceResetLocalFleetToFactory(): Machine[] {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(MACHINES_CACHE_KEY);
+    localStorage.removeItem(MACHINES_LEGACY_KEY);
+    localStorage.setItem(MACHINES_CACHE_KEY, JSON.stringify(INITIAL_MACHINES));
+    localStorage.setItem(MACHINES_LEGACY_KEY, JSON.stringify(INITIAL_MACHINES));
+    window.dispatchEvent(new CustomEvent('machines-updated'));
+  }
+  return INITIAL_MACHINES;
+}
+
+/**
+ * Flushes all offline queues and caches from the local device to prevent
+ * stale or duplicate data from being pushed back to the server on next sync.
+ */
+export function flushAllLocalDeviceCaches(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(MACHINES_CACHE_KEY);
+    localStorage.removeItem(MACHINES_LEGACY_KEY);
+    localStorage.removeItem(WORKERS_CACHE_KEY);
+    localStorage.removeItem('apex_offline_prestarts_queue');
+    localStorage.removeItem('apex_offline_dockets_queue');
+    localStorage.removeItem('apex_defects_store');
+    localStorage.removeItem('apex_services_store');
+    
+    // Re-seed clean defaults
+    localStorage.setItem(MACHINES_CACHE_KEY, JSON.stringify(INITIAL_MACHINES));
+    localStorage.setItem(MACHINES_LEGACY_KEY, JSON.stringify(INITIAL_MACHINES));
+    localStorage.setItem(WORKERS_CACHE_KEY, JSON.stringify(INITIAL_WORKERS));
+    
+    window.dispatchEvent(new CustomEvent('machines-updated'));
+    window.dispatchEvent(new CustomEvent('defects-updated'));
+    window.dispatchEvent(new CustomEvent('services-updated'));
+    window.dispatchEvent(new CustomEvent('sync-completed'));
+  }
+}
