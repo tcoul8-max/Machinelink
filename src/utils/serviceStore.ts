@@ -322,11 +322,14 @@ export async function updateMachineServiceSettings(
 
   try {
     const targetIp = getTailscaleIp();
-    await smartFetchApi('/api/master/machines', {
+    const { data: mResp } = await smartFetchApi('/api/master/machines', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(machines[mIdx]),
     }, targetIp);
+    if (mResp && Array.isArray(mResp.machines) && mResp.machines.length > 0) {
+      saveSavedMachines(mResp.machines);
+    }
   } catch (e) {
     console.log('Saved machine service settings offline.');
   }

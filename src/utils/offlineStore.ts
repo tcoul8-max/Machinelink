@@ -1,5 +1,6 @@
 import { PrestartSubmission, JobDocket } from '../types';
 import { smartFetchApi } from './apiClient';
+import { saveSavedMachines } from '../data/defaultData';
 
 const OFFLINE_PRESTARTS_KEY = 'apex_offline_prestarts_queue';
 const OFFLINE_DOCKETS_KEY = 'apex_offline_dockets_queue';
@@ -152,9 +153,8 @@ export async function attemptServerSync(): Promise<{
     }
 
     // Handle returned machines from server
-    if (data && Array.isArray(data.machines)) {
-      localStorage.setItem('apex_machines_store', JSON.stringify(data.machines));
-      window.dispatchEvent(new CustomEvent('machines-updated'));
+    if (data && Array.isArray(data.machines) && data.machines.length > 0) {
+      saveSavedMachines(data.machines);
     }
 
     window.dispatchEvent(new Event('sync-completed'));

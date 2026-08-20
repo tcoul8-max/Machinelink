@@ -25,6 +25,63 @@ if (!fs.existsSync(DOCKETS_JSON_PATH)) {
   fs.writeFileSync(DOCKETS_JSON_PATH, JSON.stringify([]), 'utf-8');
 }
 
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else if (char !== '\r') {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function deduplicateMachinesList(list) {
+  if (!Array.isArray(list)) return [];
+  const map = new Map();
+  for (const m of list) {
+    if (!m) continue;
+    const key = (m.unitCode || m.id || '').trim().toUpperCase();
+    if (!key) continue;
+    if (map.has(key)) {
+      const existing = map.get(key);
+      map.set(key, {
+        ...existing,
+        ...m,
+        id: existing.id || m.id,
+        unitCode: existing.unitCode || m.unitCode,
+        name: m.name || existing.name,
+        regoOrSerial: m.regoOrSerial || m.rego || existing.regoOrSerial || existing.rego || '',
+        prestartType: m.prestartType || existing.prestartType || 1,
+        currentHours: m.currentHours !== undefined ? Math.max(existing.currentHours || 0, m.currentHours || 0) : (existing.currentHours || 0),
+        status: m.status || existing.status || 'Operational',
+        usageUnit: m.usageUnit || existing.usageUnit || 'Hours',
+        nextServiceDue: m.nextServiceDue !== undefined ? m.nextServiceDue : existing.nextServiceDue,
+        serviceInterval: m.serviceInterval !== undefined ? m.serviceInterval : existing.serviceInterval,
+        lastServiceDate: m.lastServiceDate || existing.lastServiceDate,
+        lastServiceHours: m.lastServiceHours !== undefined ? m.lastServiceHours : existing.lastServiceHours,
+        serviceNotes: m.serviceNotes || existing.serviceNotes,
+      });
+    } else {
+      map.set(key, { ...m });
+    }
+  }
+  return Array.from(map.values());
+}
+
 // Helper to parse machines CSV
 function getMachines() {
   if (!fs.existsSync(MACHINES_CSV_PATH)) return [];
@@ -36,8 +93,8 @@ function getMachines() {
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    const parts = line.split(',').map(s => s.replace(/^"|"$/g, '').trim());
-    if (parts.length >= 6) {
+    const parts = parseCSVLine(line).map(s => s.replace(/^"|"$/g, '').trim());
+    if (parts.length >= 5) {
       const currentH = parseFloat(parts[5]) || 0;
       const nextDueVal = parts[8] !== undefined && parts[8] !== '' ? parseFloat(parts[8]) : undefined;
       const intervalVal = parts[9] !== undefined && parts[9] !== '' ? parseFloat(parts[9]) : undefined;
@@ -60,13 +117,14 @@ function getMachines() {
       });
     }
   }
-  return machines;
+  return deduplicateMachinesList(machines);
 }
 
 // Helper to save machines back to CSV
 function saveMachines(machines) {
+  const deduped = deduplicateMachinesList(machines);
   let csv = 'id,unitCode,name,regoOrSerial,prestartType,currentHours,status,usageUnit,nextServiceDue,serviceInterval,lastServiceDate,lastServiceHours\n';
-  machines.forEach(m => {
+  deduped.forEach(m => {
     csv += `"${m.id || ''}","${m.unitCode || ''}","${(m.name || '').replace(/"/g, '""')}","${m.regoOrSerial || m.rego || ''}",${m.prestartType || 1},${m.currentHours !== undefined ? m.currentHours : 0},"${m.status || 'Operational'}","${m.usageUnit || 'Hours'}",${m.nextServiceDue !== undefined && !isNaN(m.nextServiceDue) ? m.nextServiceDue : ''},${m.serviceInterval || 250},"${m.lastServiceDate || ''}",${m.lastServiceHours !== undefined && !isNaN(m.lastServiceHours) ? m.lastServiceHours : ''}\n`;
   });
   fs.writeFileSync(MACHINES_CSV_PATH, csv, 'utf-8');
@@ -274,11 +332,26 @@ app.get('/api/master/machines', (req, res) => {
 });
 
 app.post('/api/master/machines', (req, res) => {
-  const machines = getMachines();
-  const newMachine = req.body;
-  machines.push(newMachine);
+  let machines = getMachines();
+  const payload = req.body;
+  const itemsToUpsert = Array.isArray(payload) ? payload : (payload.machines && Array.isArray(payload.machines) ? payload.machines : [payload]);
+
+  for (const newMachine of itemsToUpsert) {
+    if (!newMachine) continue;
+    const existingIdx = machines.findIndex(m => 
+      (m.id && newMachine.id && m.id === newMachine.id) ||
+      (m.unitCode && newMachine.unitCode && m.unitCode.trim().toUpperCase() === newMachine.unitCode.trim().toUpperCase())
+    );
+    if (existingIdx >= 0) {
+      machines[existingIdx] = { ...machines[existingIdx], ...newMachine };
+    } else {
+      machines.push(newMachine);
+    }
+  }
+
+  machines = deduplicateMachinesList(machines);
   saveMachines(machines);
-  res.json({ success: true, machines });
+  res.json({ success: true, machines: getMachines() });
 });
 
 // 7. Master Data - Workers

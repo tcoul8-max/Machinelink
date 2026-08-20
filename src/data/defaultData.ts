@@ -273,8 +273,59 @@ export function saveSavedDocketTemplate(config: DocketTemplateConfig): void {
   }
 }
 
+export function deduplicateMachines(list: Machine[]): Machine[] {
+  if (!Array.isArray(list)) return [];
+  const map = new Map<string, Machine>();
+  for (const m of list) {
+    if (!m) continue;
+    const key = (m.unitCode || m.id || '').trim().toUpperCase();
+    if (!key) continue;
+    if (map.has(key)) {
+      const existing = map.get(key)!;
+      map.set(key, {
+        ...existing,
+        ...m,
+        id: existing.id || m.id,
+        unitCode: existing.unitCode || m.unitCode,
+        name: m.name || existing.name,
+        regoOrSerial: m.regoOrSerial || existing.regoOrSerial || '',
+        prestartType: m.prestartType || existing.prestartType || 1,
+        currentHours: m.currentHours !== undefined ? Math.max(existing.currentHours || 0, m.currentHours || 0) : existing.currentHours,
+        status: m.status || existing.status || 'Operational',
+        usageUnit: m.usageUnit || existing.usageUnit || 'Hours',
+        nextServiceDue: m.nextServiceDue !== undefined ? m.nextServiceDue : existing.nextServiceDue,
+        serviceInterval: m.serviceInterval !== undefined ? m.serviceInterval : existing.serviceInterval,
+        lastServiceDate: m.lastServiceDate || existing.lastServiceDate,
+        lastServiceHours: m.lastServiceHours !== undefined ? m.lastServiceHours : existing.lastServiceHours,
+        serviceNotes: m.serviceNotes || existing.serviceNotes,
+      });
+    } else {
+      map.set(key, { ...m });
+    }
+  }
+  return Array.from(map.values());
+}
+
+export function deduplicateWorkers(list: Worker[]): Worker[] {
+  if (!Array.isArray(list)) return [];
+  const map = new Map<string, Worker>();
+  for (const w of list) {
+    if (!w) continue;
+    const key = (w.name || w.id || '').trim().toUpperCase();
+    if (!key) continue;
+    if (map.has(key)) {
+      const existing = map.get(key)!;
+      map.set(key, { ...existing, ...w });
+    } else {
+      map.set(key, { ...w });
+    }
+  }
+  return Array.from(map.values());
+}
+
 const WORKERS_CACHE_KEY = 'apex_cached_workers';
 const MACHINES_CACHE_KEY = 'apex_cached_machines';
+const MACHINES_LEGACY_KEY = 'apex_machines_store';
 
 export function getSavedWorkers(): Worker[] {
   if (typeof window !== 'undefined') {
@@ -282,7 +333,15 @@ export function getSavedWorkers(): Worker[] {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const deduped = deduplicateWorkers(parsed);
+          if (deduped.length >= INITIAL_WORKERS.length) return deduped;
+          // Merge with initial workers if any were missing
+          const map = new Map<string, Worker>();
+          INITIAL_WORKERS.forEach(w => map.set((w.name || w.id).toUpperCase(), w));
+          deduped.forEach(w => map.set((w.name || w.id).toUpperCase(), w));
+          return Array.from(map.values());
+        }
       } catch (e) {
         // fallback
       }
@@ -293,17 +352,33 @@ export function getSavedWorkers(): Worker[] {
 
 export function saveSavedWorkers(workers: Worker[]): void {
   if (typeof window !== 'undefined' && Array.isArray(workers)) {
-    localStorage.setItem(WORKERS_CACHE_KEY, JSON.stringify(workers));
+    const deduped = deduplicateWorkers(workers);
+    localStorage.setItem(WORKERS_CACHE_KEY, JSON.stringify(deduped));
   }
 }
 
 export function getSavedMachines(): Machine[] {
   if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem(MACHINES_CACHE_KEY);
+    const saved = localStorage.getItem(MACHINES_CACHE_KEY) || localStorage.getItem(MACHINES_LEGACY_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const deduped = deduplicateMachines(parsed);
+          // If only 1 machine or lost initial fleet, merge with INITIAL_MACHINES so other fleet items aren't deleted
+          const map = new Map<string, Machine>();
+          INITIAL_MACHINES.forEach(m => map.set((m.unitCode || m.id).toUpperCase(), m));
+          deduped.forEach(m => {
+            const k = (m.unitCode || m.id).toUpperCase();
+            if (map.has(k)) {
+              map.set(k, { ...map.get(k)!, ...m });
+            } else {
+              map.set(k, m);
+            }
+          });
+          const merged = Array.from(map.values());
+          return merged;
+        }
       } catch (e) {
         // fallback
       }
@@ -314,6 +389,9 @@ export function getSavedMachines(): Machine[] {
 
 export function saveSavedMachines(machines: Machine[]): void {
   if (typeof window !== 'undefined' && Array.isArray(machines)) {
-    localStorage.setItem(MACHINES_CACHE_KEY, JSON.stringify(machines));
+    const deduped = deduplicateMachines(machines);
+    localStorage.setItem(MACHINES_CACHE_KEY, JSON.stringify(deduped));
+    localStorage.setItem(MACHINES_LEGACY_KEY, JSON.stringify(deduped));
+    window.dispatchEvent(new CustomEvent('machines-updated'));
   }
 }
