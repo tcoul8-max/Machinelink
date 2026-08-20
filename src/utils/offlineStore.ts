@@ -108,10 +108,14 @@ export async function attemptServerSync(): Promise<{
     const rawDefects = localStorage.getItem('apex_defects_store');
     const localDefects = rawDefects ? JSON.parse(rawDefects) : [];
 
+    // Get local services to sync
+    const rawServices = localStorage.getItem('apex_services_store');
+    const localServices = rawServices ? JSON.parse(rawServices) : [];
+
     const { res, data } = await smartFetchApi('/api/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prestarts, dockets, defects: localDefects, ip: targetIp }),
+      body: JSON.stringify({ prestarts, dockets, defects: localDefects, services: localServices, ip: targetIp }),
     }, targetIp);
 
     if (!res.ok) {
@@ -133,6 +137,18 @@ export async function attemptServerSync(): Promise<{
       const merged = Array.from(map.values());
       localStorage.setItem('apex_defects_store', JSON.stringify(merged));
       window.dispatchEvent(new CustomEvent('defects-updated'));
+    }
+
+    // Handle returned services from server
+    if (data && Array.isArray(data.services)) {
+      const map = new Map<string, any>();
+      localServices.forEach((s: any) => { if (s && s.id) map.set(s.id, s); });
+      data.services.forEach((s: any) => { if (s && s.id) map.set(s.id, { ...map.get(s.id), ...s }); });
+      const mergedServices = Array.from(map.values()).sort(
+        (a: any, b: any) => new Date(b.serviceDate).getTime() - new Date(a.serviceDate).getTime()
+      );
+      localStorage.setItem('apex_services_store', JSON.stringify(mergedServices));
+      window.dispatchEvent(new CustomEvent('services-updated'));
     }
 
     window.dispatchEvent(new Event('sync-completed'));

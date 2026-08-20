@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Server, ClipboardCheck, FileText, Database, History, Edit2, Wrench, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Server, ClipboardCheck, FileText, Database, History, Edit2, Wrench, AlertTriangle, CalendarCheck } from 'lucide-react';
 import { getTailscaleIp, getOfflinePrestarts, getOfflineDockets, attemptServerSync } from '../utils/offlineStore';
 import { getSavedDefects, syncDefectsFromServer } from '../utils/defectStore';
+import { getSavedMachines } from '../data/defaultData';
+import { calculateServiceStatus } from '../utils/serviceStore';
 import { smartFetchApi } from '../utils/apiClient';
 import { TailscaleIpModal } from './TailscaleIpModal';
 
 interface HeaderProps {
-  activeTab: 'prestart' | 'docket' | 'defects' | 'history' | 'server';
-  setActiveTab: (tab: 'prestart' | 'docket' | 'defects' | 'history' | 'server') => void;
+  activeTab: 'prestart' | 'docket' | 'defects' | 'services' | 'history' | 'server';
+  setActiveTab: (tab: 'prestart' | 'docket' | 'defects' | 'services' | 'history' | 'server') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
@@ -15,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
   const [showIpModal, setShowIpModal] = useState<boolean>(false);
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [openDefectsCount, setOpenDefectsCount] = useState<number>(0);
+  const [overdueServicesCount, setOverdueServicesCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
 
@@ -56,6 +59,14 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
 
     const defs = getSavedDefects();
     setOpenDefectsCount(defs.filter(d => d.status !== 'REPAIRED').length);
+
+    const machines = getSavedMachines();
+    let overdue = 0;
+    machines.forEach(m => {
+      const s = calculateServiceStatus(m.currentHours, m.nextServiceDue, m.usageUnit || 'Hours', m.lastServiceHours);
+      if (s.status === 'OVERDUE') overdue++;
+    });
+    setOverdueServicesCount(overdue);
   };
 
   useEffect(() => {
@@ -77,9 +88,14 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
       refreshCounts();
     };
 
+    const handleServicesChange = () => {
+      refreshCounts();
+    };
+
     window.addEventListener('tailscale-ip-changed', handleIpChange);
     window.addEventListener('sync-completed', handleSyncChange);
     window.addEventListener('defects-updated', handleDefectsChange);
+    window.addEventListener('services-updated', handleServicesChange);
 
     // Periodic health check interval (every 15 seconds)
     const intervalId = setInterval(() => {
@@ -90,6 +106,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
       window.removeEventListener('tailscale-ip-changed', handleIpChange);
       window.removeEventListener('sync-completed', handleSyncChange);
       window.removeEventListener('defects-updated', handleDefectsChange);
+      window.removeEventListener('services-updated', handleServicesChange);
       clearInterval(intervalId);
     };
   }, [serverIp]);
@@ -254,6 +271,27 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
                   : 'bg-rose-500 text-white'
               }`}>
                 {openDefectsCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('services')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer relative ${
+              activeTab === 'services'
+                ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <CalendarCheck className="w-4 h-4" />
+            Services
+            {overdueServicesCount > 0 && (
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                activeTab === 'services'
+                  ? 'bg-rose-600 text-white animate-pulse'
+                  : 'bg-rose-500 text-white'
+              }`}>
+                {overdueServicesCount}
               </span>
             )}
           </button>

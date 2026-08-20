@@ -33,6 +33,7 @@ const WORKERS_JSON_PATH = path.join(STORAGE_DIR, 'workers.json');
 const MACHINES_JSON_PATH = path.join(STORAGE_DIR, 'machines.json');
 const DOCKETS_JSON_PATH = path.join(STORAGE_DIR, 'dockets.json');
 const DEFECTS_JSON_PATH = path.join(STORAGE_DIR, 'defects.json');
+const SERVICES_JSON_PATH = path.join(STORAGE_DIR, 'services.json');
 const TEMPLATE_JSON_PATH = path.join(STORAGE_DIR, 'docket_template.json');
 
 function parsePrestartsFromCSV(): any[] {
@@ -230,6 +231,127 @@ function getDefects(): any[] {
 
 function saveDefects(defects: any[]) {
   fs.writeFileSync(DEFECTS_JSON_PATH, JSON.stringify(defects, null, 2));
+}
+
+const INITIAL_SERVICES_SERVER: any[] = [
+  {
+    id: 'SRV-101',
+    machineId: 'm1',
+    unitCode: 'EX-201',
+    machineName: 'CAT 320 Next Gen Excavator (Tracked)',
+    serviceDate: '2026-07-15',
+    performedByWorkerId: 'w3',
+    performedByWorkerName: 'Name 3 (Heavy Diesel Fitter)',
+    completedAtHours: 1250.0,
+    usageUnit: 'Hours',
+    serviceType: '250h Standard PM Service',
+    notes: 'Replaced engine oil & filter (Cat 15W-40). Inspected hydraulic return filter. Greased all slew and boom pins. Track tension verified.',
+    nextServiceDueSetTo: 1500.0,
+    synced: true,
+    syncedAt: '2026-07-15T14:30:00Z',
+    createdAt: '2026-07-15T14:30:00Z',
+  },
+  {
+    id: 'SRV-102',
+    machineId: 'm1',
+    unitCode: 'EX-201',
+    machineName: 'CAT 320 Next Gen Excavator (Tracked)',
+    serviceDate: '2026-04-20',
+    performedByWorkerId: 'w3',
+    performedByWorkerName: 'Name 3 (Heavy Diesel Fitter)',
+    completedAtHours: 1000.0,
+    usageUnit: 'Hours',
+    serviceType: '1,000h Major Overhaul Service',
+    notes: 'Complete fluid change. Engine, hydraulic oil, final drive planetary oils renewed. Air cleaner primary and secondary elements replaced.',
+    nextServiceDueSetTo: 1250.0,
+    synced: true,
+    syncedAt: '2026-04-20T16:00:00Z',
+    createdAt: '2026-04-20T16:00:00Z',
+  },
+  {
+    id: 'SRV-103',
+    machineId: 'm2',
+    unitCode: 'LD-104',
+    machineName: 'Komatsu WA380 Wheel Loader',
+    serviceDate: '2026-06-20',
+    performedByWorkerId: 'w1',
+    performedByWorkerName: 'Name 1 (Senior Plant Operator)',
+    completedAtHours: 3750.0,
+    usageUnit: 'Hours',
+    serviceType: '250h Minor Service & Inspection',
+    notes: 'Engine lube service, fuel water drain, lube all steering cylinder pins and bucket linkage joints.',
+    nextServiceDueSetTo: 4000.0,
+    synced: true,
+    syncedAt: '2026-06-20T11:20:00Z',
+    createdAt: '2026-06-20T11:20:00Z',
+  },
+  {
+    id: 'SRV-104',
+    machineId: 'm3',
+    unitCode: 'DZ-05',
+    machineName: 'CAT D6 Dozer (Tracked)',
+    serviceDate: '2026-07-02',
+    performedByWorkerId: 'w3',
+    performedByWorkerName: 'Name 3 (Heavy Diesel Fitter)',
+    completedAtHours: 2000.0,
+    usageUnit: 'Hours',
+    serviceType: '500h Mid-Life Service',
+    notes: 'Transmission fluid drain & refill. Final drives serviced. Blade pins greased and tension verified.',
+    nextServiceDueSetTo: 2250.0,
+    synced: true,
+    syncedAt: '2026-07-02T13:45:00Z',
+    createdAt: '2026-07-02T13:45:00Z',
+  },
+  {
+    id: 'SRV-105',
+    machineId: 'm4',
+    unitCode: 'BH-02',
+    machineName: 'JCB 3CX Backhoe Loader (Wheeled)',
+    serviceDate: '2026-05-10',
+    performedByWorkerId: 'w4',
+    performedByWorkerName: 'Name 4 (Site Supervisor)',
+    completedAtHours: 600.0,
+    usageUnit: 'Hours',
+    serviceType: '250h Standard PM Service',
+    notes: 'Engine oil changed, hydraulic lines flushed, boom safety check. Note: Front tire tread at 40%.',
+    nextServiceDueSetTo: 850.0,
+    synced: true,
+    syncedAt: '2026-05-10T09:15:00Z',
+    createdAt: '2026-05-10T09:15:00Z',
+  },
+  {
+    id: 'SRV-106',
+    machineId: 'm5',
+    unitCode: 'UTE-09',
+    machineName: 'Toyota Hilux 4x4 Field Service Ute',
+    serviceDate: '2026-06-11',
+    performedByWorkerId: 'w3',
+    performedByWorkerName: 'Name 3 (Heavy Diesel Fitter)',
+    completedAtHours: 120000,
+    usageUnit: 'KM',
+    serviceType: '10,000 KM Periodic Service',
+    notes: 'Synthetic 5W-30 engine oil, OEM oil filter, fuel filter, tire rotation and pressure set to 38 PSI.',
+    nextServiceDueSetTo: 130000,
+    synced: true,
+    syncedAt: '2026-06-11T15:10:00Z',
+    createdAt: '2026-06-11T15:10:00Z',
+  },
+];
+
+function getServices(): any[] {
+  if (fs.existsSync(SERVICES_JSON_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(SERVICES_JSON_PATH, 'utf-8'));
+      if (Array.isArray(data)) return data;
+    } catch (e) {
+      // fallback
+    }
+  }
+  return INITIAL_SERVICES_SERVER;
+}
+
+function saveServices(services: any[]) {
+  fs.writeFileSync(SERVICES_JSON_PATH, JSON.stringify(services, null, 2));
 }
 const PRESTART_TEMPLATES_JSON_PATH = path.join(STORAGE_DIR, 'prestart_templates.json');
 
@@ -626,6 +748,7 @@ app.get('/api/server-info', async (req, res) => {
   const csvLines = prestartCsvContent.trim().split('\n');
   const prestartsCount = Math.max(0, csvLines.length - 1, getPrestarts().length);
   const dockets = getDockets();
+  const services = getServices();
 
   res.json({
     tailscaleIp: '100.112.45.19',
@@ -634,6 +757,7 @@ app.get('/api/server-info', async (req, res) => {
     serverName: 'APEX-TOWER-01 (Tailscale Mesh Node)',
     serverPrestartsCount: prestartsCount,
     serverDocketsCount: dockets.length,
+    serverServicesCount: services.length,
     lastSyncTimestamp: new Date().toISOString(),
     storagePath: STORAGE_DIR
   });
@@ -1087,6 +1211,67 @@ app.post('/api/defects', async (req, res) => {
   res.json({ success: true, defects: updated });
 });
 
+app.get('/api/services', async (req, res) => {
+  const targetIp = (req.query.ip as string || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const r = await fetch(`${targetUrl}/api/services`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Silent fallback
+    }
+  }
+  res.json(getServices());
+});
+
+app.post('/api/services', async (req, res) => {
+  const targetIp = (req.query.ip as string || req.body?.ip || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const r = await fetch(`${targetUrl}/api/services`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        return res.json(data);
+      }
+    } catch (e) {
+      // Silent fallback
+    }
+  }
+
+  const incoming = Array.isArray(req.body) ? req.body : [req.body];
+  const existing = getServices();
+  const map = new Map<string, any>();
+  existing.forEach(s => { if (s && s.id) map.set(s.id, s); });
+
+  incoming.forEach(s => {
+    if (s && s.id) {
+      map.set(s.id, { ...map.get(s.id), ...s });
+    }
+  });
+
+  const updated = Array.from(map.values()).sort(
+    (a, b) => new Date(b.serviceDate).getTime() - new Date(a.serviceDate).getTime()
+  );
+  saveServices(updated);
+  res.json({ success: true, services: updated });
+});
+
 // Batch sync endpoint for offline queue
 app.post('/api/sync', async (req, res) => {
   const targetIp = (req.query.ip as string || req.body.ip || '').trim();
@@ -1113,10 +1298,27 @@ app.post('/api/sync', async (req, res) => {
     }
   }
 
-  const { prestarts = [], dockets = [], defects = [] } = req.body;
+  const { prestarts = [], dockets = [], defects = [], services = [] } = req.body;
 
   let prestartsProcessed = 0;
   let docketsProcessed = 0;
+  let servicesProcessed = 0;
+
+  // Sync Services
+  const existingServices = getServices();
+  const serviceMap = new Map<string, any>();
+  existingServices.forEach((s: any) => { if (s && s.id) serviceMap.set(s.id, s); });
+
+  for (const s of services) {
+    if (s && s.id) {
+      serviceMap.set(s.id, { ...serviceMap.get(s.id), ...s, synced: true, syncedAt: new Date().toISOString() });
+      servicesProcessed++;
+    }
+  }
+  const updatedServices = Array.from(serviceMap.values()).sort(
+    (a, b) => new Date(b.serviceDate).getTime() - new Date(a.serviceDate).getTime()
+  );
+  saveServices(updatedServices);
 
   // Sync Defects
   const existingDefects = getDefects();
@@ -1202,7 +1404,9 @@ app.post('/api/sync', async (req, res) => {
     syncedAt: new Date().toISOString(),
     prestartsSyncedCount: prestartsProcessed,
     docketsSyncedCount: docketsProcessed,
+    servicesSyncedCount: servicesProcessed,
     defects: updatedDefects,
+    services: updatedServices,
     serverMessage: 'Tailscale Server Tower synchronized successfully.'
   });
 });

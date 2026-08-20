@@ -25,6 +25,34 @@ export interface Machine {
   currentHours: number;
   status: 'Operational' | 'Requires Service' | 'Out of Service';
   lastPrestartDate?: string;
+  // Service management fields
+  usageUnit?: 'Hours' | 'KM';
+  nextServiceDue?: number;
+  serviceInterval?: number; // e.g. 250, 500, 10000
+  lastServiceDate?: string;
+  lastServiceHours?: number;
+  lastServiceByWorkerId?: string;
+  lastServiceByWorkerName?: string;
+  serviceNotes?: string;
+}
+
+export interface ServiceRecord {
+  id: string; // e.g. "SRV-1722800000"
+  machineId: string;
+  unitCode: string;
+  machineName: string;
+  serviceDate: string; // YYYY-MM-DD
+  performedByWorkerId: string;
+  performedByWorkerName: string;
+  completedAtHours: number; // Meter reading when service occurred
+  usageUnit: 'Hours' | 'KM';
+  serviceType: string; // e.g. "250h Minor Service", "500h Major Service", "10,000km Service"
+  notes: string;
+  partsReplaced?: string[];
+  nextServiceDueSetTo?: number;
+  synced?: boolean;
+  syncedAt?: string;
+  createdAt?: string;
 }
 
 export interface CheckItemDefinition {

@@ -8,11 +8,12 @@ import { Header } from './components/Header';
 import { PrestartForm } from './components/PrestartForm';
 import { JobDocketForm } from './components/JobDocketForm';
 import { DefectManager } from './components/DefectManager';
+import { ServiceManager } from './components/ServiceManager';
 import { HistoryViewer } from './components/HistoryViewer';
 import { ServerTowerAdmin } from './components/ServerTowerAdmin';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'prestart' | 'docket' | 'defects' | 'history' | 'server'>('prestart');
+  const [activeTab, setActiveTab] = useState<'prestart' | 'docket' | 'defects' | 'services' | 'history' | 'server'>('prestart');
   const [workers, setWorkers] = useState<Worker[]>(() => getSavedWorkers());
   const [machines, setMachines] = useState<Machine[]>(() => getSavedMachines());
 
@@ -78,6 +79,14 @@ export default function App() {
             machines={machines}
             workers={workers}
             onDefectsUpdated={fetchMasterLists}
+          />
+        )}
+
+        {activeTab === 'services' && (
+          <ServiceManager
+            machines={machines}
+            workers={workers}
+            onDataUpdated={fetchMasterLists}
           />
         )}
 
