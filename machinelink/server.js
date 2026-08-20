@@ -29,21 +29,34 @@ if (!fs.existsSync(DOCKETS_JSON_PATH)) {
 function getMachines() {
   if (!fs.existsSync(MACHINES_CSV_PATH)) return [];
   const content = fs.readFileSync(MACHINES_CSV_PATH, 'utf-8');
-  const lines = content.trim().split('\n');
+  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
   if (lines.length <= 1) return [];
 
   const machines = [];
   for (let i = 1; i < lines.length; i++) {
-    const parts = lines[i].split(',');
-    if (parts.length >= 7) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const parts = line.split(',').map(s => s.replace(/^"|"$/g, '').trim());
+    if (parts.length >= 6) {
+      const currentH = parseFloat(parts[5]) || 0;
+      const nextDueVal = parts[8] !== undefined && parts[8] !== '' ? parseFloat(parts[8]) : undefined;
+      const intervalVal = parts[9] !== undefined && parts[9] !== '' ? parseFloat(parts[9]) : undefined;
+      const lastHVal = parts[11] !== undefined && parts[11] !== '' ? parseFloat(parts[11]) : undefined;
+
       machines.push({
-        id: parts[0].trim(),
-        unitCode: parts[1].trim(),
-        name: parts[2].trim(),
-        rego: parts[3].trim(),
-        prestartType: parseInt(parts[4].trim(), 10) || 1,
-        currentHours: parseFloat(parts[5].trim()) || 0,
-        status: parts[6].trim()
+        id: parts[0] || `m_${i}`,
+        unitCode: parts[1] || `UNIT-${i}`,
+        name: parts[2] || 'Machine',
+        rego: parts[3] || '',
+        regoOrSerial: parts[3] || '',
+        prestartType: parseInt(parts[4], 10) || 1,
+        currentHours: currentH,
+        status: parts[6] || 'Operational',
+        usageUnit: parts[7] === 'KM' ? 'KM' : 'Hours',
+        nextServiceDue: !isNaN(nextDueVal) ? nextDueVal : undefined,
+        serviceInterval: !isNaN(intervalVal) ? intervalVal : undefined,
+        lastServiceDate: parts[10] || undefined,
+        lastServiceHours: !isNaN(lastHVal) ? lastHVal : undefined,
       });
     }
   }
@@ -52,9 +65,9 @@ function getMachines() {
 
 // Helper to save machines back to CSV
 function saveMachines(machines) {
-  let csv = 'id,unitCode,name,rego,prestartType,currentHours,status\n';
+  let csv = 'id,unitCode,name,regoOrSerial,prestartType,currentHours,status,usageUnit,nextServiceDue,serviceInterval,lastServiceDate,lastServiceHours\n';
   machines.forEach(m => {
-    csv += `${m.id},${m.unitCode},${m.name},${m.rego || ''},${m.prestartType},${m.currentHours},${m.status}\n`;
+    csv += `"${m.id || ''}","${m.unitCode || ''}","${(m.name || '').replace(/"/g, '""')}","${m.regoOrSerial || m.rego || ''}",${m.prestartType || 1},${m.currentHours !== undefined ? m.currentHours : 0},"${m.status || 'Operational'}","${m.usageUnit || 'Hours'}",${m.nextServiceDue !== undefined && !isNaN(m.nextServiceDue) ? m.nextServiceDue : ''},${m.serviceInterval || 250},"${m.lastServiceDate || ''}",${m.lastServiceHours !== undefined && !isNaN(m.lastServiceHours) ? m.lastServiceHours : ''}\n`;
   });
   fs.writeFileSync(MACHINES_CSV_PATH, csv, 'utf-8');
 }
@@ -151,18 +164,24 @@ app.post(['/api/prestart', '/api/prestarts'], (req, res) => {
 
   // Update current machine engine hours if higher
   const machines = getMachines();
+  const targetHours = parseFloat(p.engineHours);
   const targetMac = machines.find(m => m.unitCode === p.machineCode || m.id === p.machineId);
-  if (targetMac && p.engineHours > targetMac.currentHours) {
-    targetMac.currentHours = p.engineHours;
+  if (targetMac && !isNaN(targetHours) && targetHours > 0) {
+    if (targetHours > (targetMac.currentHours || 0) || !targetMac.currentHours) {
+      targetMac.currentHours = targetHours;
+    }
+    targetMac.lastPrestartDate = p.date;
     if (p.overallStatus === 'UNSAFE_OUT_OF_SERVICE') {
       targetMac.status = 'Out of Service';
-    } else if (p.overallStatus === 'SAFE_WITH_DEFECTS') {
-      targetMac.status = 'Defects Noted';
+    } else if (p.overallStatus === 'DEFECT_REPORTED' || p.overallStatus === 'SAFE_WITH_DEFECTS') {
+      targetMac.status = 'Requires Service';
+    } else if (targetMac.status !== 'Out of Service') {
+      targetMac.status = 'Operational';
     }
     saveMachines(machines);
   }
 
-  res.json({ success: true, id: p.id, syncedAt: new Date().toISOString() });
+  res.json({ success: true, id: p.id, syncedAt: new Date().toISOString(), machines: getMachines() });
 });
 
 // 3b. Batch Sync Endpoint
@@ -171,12 +190,37 @@ app.post('/api/sync', (req, res) => {
   let pSynced = 0;
   let dSynced = 0;
 
+  const machines = getMachines();
+  let machinesUpdated = false;
+
   for (const p of prestarts) {
     const hasDefects = p.overallStatus !== 'SAFE_TO_OPERATE';
     const cleanNotes = (p.generalNotes || '').replace(/[\r\n,]/g, ' ');
     const row = `${p.id},${new Date(p.timestamp || Date.now()).toISOString()},${p.date},${p.workerName},${p.machineCode},${p.machineName},${p.prestartType},${p.engineHours},${p.overallStatus},"${cleanNotes}",${hasDefects}\n`;
     fs.appendFileSync(PRESTARTS_CSV_PATH, row, 'utf-8');
     pSynced++;
+
+    // Update machine current hours & status from prestart
+    const targetHours = parseFloat(p.engineHours);
+    const targetMac = machines.find(m => m.unitCode === p.machineCode || m.id === p.machineId);
+    if (targetMac && !isNaN(targetHours) && targetHours > 0) {
+      if (targetHours > (targetMac.currentHours || 0) || !targetMac.currentHours) {
+        targetMac.currentHours = targetHours;
+        machinesUpdated = true;
+      }
+      targetMac.lastPrestartDate = p.date;
+      if (p.overallStatus === 'UNSAFE_OUT_OF_SERVICE') {
+        targetMac.status = 'Out of Service';
+        machinesUpdated = true;
+      } else if (p.overallStatus === 'DEFECT_REPORTED' || p.overallStatus === 'SAFE_WITH_DEFECTS') {
+        targetMac.status = 'Requires Service';
+        machinesUpdated = true;
+      }
+    }
+  }
+
+  if (machinesUpdated) {
+    saveMachines(machines);
   }
 
   const existingDockets = getDockets();
@@ -199,6 +243,7 @@ app.post('/api/sync', (req, res) => {
     syncedAt: new Date().toISOString(),
     prestartsSyncedCount: pSynced,
     docketsSyncedCount: dSynced,
+    machines: getMachines(),
     serverMessage: 'MachineLink PM2 Server synchronized successfully.'
   });
 });

@@ -151,6 +151,12 @@ export async function attemptServerSync(): Promise<{
       window.dispatchEvent(new CustomEvent('services-updated'));
     }
 
+    // Handle returned machines from server
+    if (data && Array.isArray(data.machines)) {
+      localStorage.setItem('apex_machines_store', JSON.stringify(data.machines));
+      window.dispatchEvent(new CustomEvent('machines-updated'));
+    }
+
     window.dispatchEvent(new Event('sync-completed'));
 
     if (prestarts.length === 0 && dockets.length === 0) {

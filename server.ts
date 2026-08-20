@@ -521,16 +521,26 @@ function getMachinesFromCSV(): any[] | null {
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            const parts = line.split(',');
+            const parts = line.split(',').map(s => s.replace(/^"|"$/g, '').trim());
             if (parts.length >= 6) {
+              const currentH = parseFloat(parts[5]) || 0;
+              const nextDueVal = parts[8] !== undefined && parts[8] !== '' ? parseFloat(parts[8]) : undefined;
+              const intervalVal = parts[9] !== undefined && parts[9] !== '' ? parseFloat(parts[9]) : undefined;
+              const lastHVal = parts[11] !== undefined && parts[11] !== '' ? parseFloat(parts[11]) : undefined;
+
               machines.push({
-                id: parts[0]?.trim(),
-                unitCode: parts[1]?.trim(),
-                name: parts[2]?.trim(),
-                regoOrSerial: parts[3]?.trim(),
-                prestartType: parseInt(parts[4]?.trim(), 10) || 1,
-                currentHours: parseFloat(parts[5]?.trim()) || 0,
-                status: parts[6] ? parts[6].trim() : 'Operational'
+                id: parts[0] || `m_${i}`,
+                unitCode: parts[1] || `UNIT-${i}`,
+                name: parts[2] || 'Machine',
+                regoOrSerial: parts[3] || '',
+                prestartType: parseInt(parts[4], 10) || 1,
+                currentHours: currentH,
+                status: parts[6] ? parts[6] : 'Operational',
+                usageUnit: parts[7] === 'KM' ? 'KM' : 'Hours',
+                nextServiceDue: !isNaN(nextDueVal as number) ? nextDueVal : undefined,
+                serviceInterval: !isNaN(intervalVal as number) ? intervalVal : undefined,
+                lastServiceDate: parts[10] || undefined,
+                lastServiceHours: !isNaN(lastHVal as number) ? lastHVal : undefined,
               });
             }
           }
@@ -557,14 +567,43 @@ function getWorkers() {
 }
 
 function getMachines() {
-  const fromCsv = getMachinesFromCSV();
-  if (fromCsv) return fromCsv;
-
-  try {
-    return JSON.parse(fs.readFileSync(MACHINES_JSON_PATH, 'utf-8'));
-  } catch (e) {
-    return INITIAL_MACHINES;
+  let jsonMachines: any[] = [];
+  if (fs.existsSync(MACHINES_JSON_PATH)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(MACHINES_JSON_PATH, 'utf-8'));
+      if (Array.isArray(parsed)) jsonMachines = parsed;
+    } catch (e) {
+      // fallback
+    }
   }
+
+  const fromCsv = getMachinesFromCSV();
+  if (!fromCsv || fromCsv.length === 0) {
+    return jsonMachines.length > 0 ? jsonMachines : INITIAL_MACHINES;
+  }
+
+  // Merge CSV with JSON machine properties so nextServiceDue & metadata are preserved
+  const jsonMap = new Map<string, any>();
+  jsonMachines.forEach(m => {
+    if (m && m.id) jsonMap.set(m.id, m);
+    if (m && m.unitCode) jsonMap.set(m.unitCode, m);
+  });
+
+  const merged = fromCsv.map(cm => {
+    const jm = jsonMap.get(cm.id) || jsonMap.get(cm.unitCode) || {};
+    return {
+      ...jm,
+      ...cm,
+      usageUnit: cm.usageUnit || jm.usageUnit || 'Hours',
+      nextServiceDue: cm.nextServiceDue !== undefined ? cm.nextServiceDue : jm.nextServiceDue,
+      serviceInterval: cm.serviceInterval !== undefined ? cm.serviceInterval : jm.serviceInterval,
+      lastServiceDate: cm.lastServiceDate || jm.lastServiceDate,
+      lastServiceHours: cm.lastServiceHours !== undefined ? cm.lastServiceHours : jm.lastServiceHours,
+      serviceNotes: cm.serviceNotes || jm.serviceNotes,
+    };
+  });
+
+  return merged;
 }
 
 function getDockets() {
@@ -581,6 +620,29 @@ function saveWorkers(workers: any) {
 
 function saveMachines(machines: any) {
   fs.writeFileSync(MACHINES_JSON_PATH, JSON.stringify(machines, null, 2));
+
+  // Also sync to machines.csv in server_storage or machinelink if present
+  try {
+    const targetDirs = [
+      STORAGE_DIR,
+      path.join(process.cwd(), 'machinelink'),
+      path.join(process.cwd(), 'server_storage'),
+      process.cwd(),
+      '/home/tristan/machinelink'
+    ];
+    for (const dir of targetDirs) {
+      if (fs.existsSync(dir)) {
+        const csvPath = path.join(dir, 'machines.csv');
+        const header = 'id,unitCode,name,regoOrSerial,prestartType,currentHours,status,usageUnit,nextServiceDue,serviceInterval,lastServiceDate,lastServiceHours\n';
+        const rows = machines.map((m: any) =>
+          `"${m.id || ''}","${m.unitCode || ''}","${(m.name || '').replace(/"/g, '""')}","${m.regoOrSerial || m.rego || ''}",${m.prestartType || 1},${m.currentHours !== undefined ? m.currentHours : 0},"${m.status || 'Operational'}","${m.usageUnit || 'Hours'}",${m.nextServiceDue !== undefined && !isNaN(m.nextServiceDue) ? m.nextServiceDue : ''},${m.serviceInterval || 250},"${m.lastServiceDate || ''}",${m.lastServiceHours !== undefined && !isNaN(m.lastServiceHours) ? m.lastServiceHours : ''}`
+        ).join('\n');
+        fs.writeFileSync(csvPath, header + rows + '\n');
+      }
+    }
+  } catch (e) {
+    console.error('Error syncing machines.csv:', e);
+  }
 }
 
 function saveDockets(dockets: any) {
@@ -980,8 +1042,11 @@ app.post('/api/prestarts', (req, res) => {
   const machines = getMachines();
   const machine = machines.find((m: any) => m.id === submission.machineId || m.unitCode === submission.machineCode);
   if (machine) {
-    if (submission.engineHours && submission.engineHours > machine.currentHours) {
-      machine.currentHours = submission.engineHours;
+    const subHours = parseFloat(submission.engineHours);
+    if (!isNaN(subHours) && subHours > 0) {
+      if (subHours > (machine.currentHours || 0) || !machine.currentHours) {
+        machine.currentHours = subHours;
+      }
     }
     machine.lastPrestartDate = submission.date || new Date().toISOString();
     if (submission.overallStatus === 'UNSAFE_OUT_OF_SERVICE') {
@@ -994,7 +1059,7 @@ app.post('/api/prestarts', (req, res) => {
     saveMachines(machines);
   }
 
-  res.json({ success: true, submissionId: submission.id, syncedAt: submission.syncedAt });
+  res.json({ success: true, submissionId: submission.id, syncedAt: submission.syncedAt, machines: getMachines() });
 });
 
 // Download raw CSV file
@@ -1371,10 +1436,20 @@ app.post('/api/sync', async (req, res) => {
     const machines = getMachines();
     const machine = machines.find((m: any) => m.id === prestart.machineId || m.unitCode === prestart.machineCode);
     if (machine) {
-      if (prestart.engineHours && prestart.engineHours > machine.currentHours) {
-        machine.currentHours = prestart.engineHours;
+      const pHours = parseFloat(prestart.engineHours);
+      if (!isNaN(pHours) && pHours > 0) {
+        if (pHours > (machine.currentHours || 0) || !machine.currentHours) {
+          machine.currentHours = pHours;
+        }
       }
-      machine.lastPrestartDate = prestart.date;
+      machine.lastPrestartDate = prestart.date || new Date().toISOString();
+      if (prestart.overallStatus === 'UNSAFE_OUT_OF_SERVICE') {
+        machine.status = 'Out of Service';
+      } else if (prestart.overallStatus === 'DEFECT_REPORTED') {
+        machine.status = 'Requires Service';
+      } else if (machine.status !== 'Out of Service') {
+        machine.status = 'Operational';
+      }
       saveMachines(machines);
     }
     prestartsProcessed++;
@@ -1405,6 +1480,7 @@ app.post('/api/sync', async (req, res) => {
     prestartsSyncedCount: prestartsProcessed,
     docketsSyncedCount: docketsProcessed,
     servicesSyncedCount: servicesProcessed,
+    machines: getMachines(),
     defects: updatedDefects,
     services: updatedServices,
     serverMessage: 'Tailscale Server Tower synchronized successfully.'

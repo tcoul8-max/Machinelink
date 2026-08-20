@@ -3,6 +3,7 @@ import { Worker, Machine } from './types';
 import { getSavedWorkers, saveSavedWorkers, getSavedMachines, saveSavedMachines } from './data/defaultData';
 import { getTailscaleIp } from './utils/offlineStore';
 import { syncDefectsFromServer } from './utils/defectStore';
+import { syncServicesFromServer } from './utils/serviceStore';
 import { smartFetchApi } from './utils/apiClient';
 import { Header } from './components/Header';
 import { PrestartForm } from './components/PrestartForm';
@@ -32,7 +33,8 @@ export default function App() {
         saveSavedMachines(mData);
       }
 
-      await syncDefectsFromServer(targetIp);
+      await syncDefectsFromServer();
+      await syncServicesFromServer();
     } catch (e) {
       console.log('Using local cached master lists (offline/initial startup)');
     }
@@ -43,13 +45,18 @@ export default function App() {
 
     const handleIpChange = () => fetchMasterLists();
     const handleSyncChange = () => fetchMasterLists();
+    const handleMachinesChange = () => {
+      setMachines(getSavedMachines());
+    };
 
     window.addEventListener('tailscale-ip-changed', handleIpChange);
     window.addEventListener('sync-completed', handleSyncChange);
+    window.addEventListener('machines-updated', handleMachinesChange);
 
     return () => {
       window.removeEventListener('tailscale-ip-changed', handleIpChange);
       window.removeEventListener('sync-completed', handleSyncChange);
+      window.removeEventListener('machines-updated', handleMachinesChange);
     };
   }, []);
 

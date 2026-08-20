@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Worker, Machine, PrestartSubmission, CheckStatus, ItemCheckResult, PrestartType, PrestartTemplateStore, DefectRecord } from '../types';
-import { getSavedPrestartTemplates, saveSavedPrestartTemplates, getCheckItemsForType } from '../data/defaultData';
+import { getSavedPrestartTemplates, saveSavedPrestartTemplates, getCheckItemsForType, getSavedMachines, saveSavedMachines } from '../data/defaultData';
 import { getOpenDefectsForMachine, createDefectsFromPrestart } from '../utils/defectStore';
 import { SignatureCanvas } from './SignatureCanvas';
 import { saveOfflinePrestart, attemptServerSync, getSimulatedOffline, getTailscaleIp } from '../utils/offlineStore';
@@ -195,14 +195,35 @@ export const PrestartForm: React.FC<PrestartFormProps> = ({ workers, machines, o
       synced: false,
     };
 
-    // 1. Save locally
+    // 1. Save prestart locally
     saveOfflinePrestart(newSubmission);
 
-    // 2. Create defect records for any failed/noted items
+    // 2. Update local master machine meter hours & status
+    const allSavedMachines = getSavedMachines();
+    const targetIdx = allSavedMachines.findIndex(
+      m => m.id === activeMachine.id || m.unitCode === activeMachine.unitCode
+    );
+    if (targetIdx >= 0) {
+      if (parsedHours > (allSavedMachines[targetIdx].currentHours || 0) || !allSavedMachines[targetIdx].currentHours) {
+        allSavedMachines[targetIdx].currentHours = parsedHours;
+      }
+      allSavedMachines[targetIdx].lastPrestartDate = newSubmission.date;
+      if (overallStatus === 'UNSAFE_OUT_OF_SERVICE') {
+        allSavedMachines[targetIdx].status = 'Out of Service';
+      } else if (overallStatus === 'DEFECT_REPORTED') {
+        allSavedMachines[targetIdx].status = 'Requires Service';
+      } else if (allSavedMachines[targetIdx].status !== 'Out of Service') {
+        allSavedMachines[targetIdx].status = 'Operational';
+      }
+      saveSavedMachines(allSavedMachines);
+      window.dispatchEvent(new CustomEvent('machines-updated'));
+    }
+
+    // 3. Create defect records for any failed/noted items
     await createDefectsFromPrestart(newSubmission, templateStore.questions);
     window.dispatchEvent(new CustomEvent('defects-updated'));
 
-    // 3. Try server sync
+    // 4. Try server sync
     const syncRes = await attemptServerSync();
 
     if (syncRes.success) {

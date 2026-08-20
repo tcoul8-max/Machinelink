@@ -183,16 +183,20 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
 
   // Filter machines
   const filteredMachines = machines.filter(m => {
+    if (!m) return false;
     const unit = m.usageUnit || 'Hours';
-    const matchesSearch =
-      m.unitCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.regoOrSerial.toLowerCase().includes(searchQuery.toLowerCase());
+    const query = searchQuery.trim().toLowerCase();
 
-    if (!matchesSearch) return false;
+    if (query) {
+      const unitCode = (m.unitCode || '').toLowerCase();
+      const name = (m.name || '').toLowerCase();
+      const rego = (m.regoOrSerial || '').toLowerCase();
+      const matchesSearch = unitCode.includes(query) || name.includes(query) || rego.includes(query);
+      if (!matchesSearch) return false;
+    }
 
     if (statusFilter === 'ALL') return true;
-    const statusCalc = calculateServiceStatus(m.currentHours, m.nextServiceDue, unit, m.lastServiceHours);
+    const statusCalc = calculateServiceStatus(m.currentHours || 0, m.nextServiceDue, unit, m.lastServiceHours);
     if (statusFilter === 'OVERDUE') return statusCalc.status === 'OVERDUE';
     if (statusFilter === 'DUE_SOON') return statusCalc.status === 'DUE_SOON';
     if (statusFilter === 'GOOD') return statusCalc.status === 'GOOD';
@@ -203,15 +207,15 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
   // Sort machines
   const sortedMachines = [...filteredMachines].sort((a, b) => {
     if (sortBy === 'name') {
-      return a.name.localeCompare(b.name);
+      return (a.name || '').localeCompare(b.name || '');
     }
     if (sortBy === 'unitCode') {
-      return a.unitCode.localeCompare(b.unitCode);
+      return (a.unitCode || '').localeCompare(b.unitCode || '');
     }
     // Default: Sort by service time remaining (lowest/most overdue first)
     const getDiff = (m: Machine) => {
-      if (m.nextServiceDue === undefined || m.nextServiceDue === null) return 9999999;
-      return m.nextServiceDue - m.currentHours;
+      if (m.nextServiceDue === undefined || m.nextServiceDue === null || isNaN(m.nextServiceDue)) return 9999999;
+      return m.nextServiceDue - (m.currentHours || 0);
     };
     return getDiff(a) - getDiff(b);
   });
@@ -220,7 +224,8 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
   let overdueCount = 0;
   let dueSoonCount = 0;
   machines.forEach(m => {
-    const calc = calculateServiceStatus(m.currentHours, m.nextServiceDue, m.usageUnit || 'Hours', m.lastServiceHours);
+    if (!m) return;
+    const calc = calculateServiceStatus(m.currentHours || 0, m.nextServiceDue, m.usageUnit || 'Hours', m.lastServiceHours);
     if (calc.status === 'OVERDUE') overdueCount++;
     else if (calc.status === 'DUE_SOON') dueSoonCount++;
   });
@@ -228,7 +233,7 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
   const activeMachineServices = activeMachine ? getServicesForMachine(activeMachine.id, services) : [];
   const activeStatusCalc = activeMachine
     ? calculateServiceStatus(
-        activeMachine.currentHours,
+        activeMachine.currentHours || 0,
         activeMachine.nextServiceDue,
         activeMachine.usageUnit || 'Hours',
         activeMachine.lastServiceHours
@@ -347,10 +352,11 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
           </div>
         ) : (
           sortedMachines.map(machine => {
+            const currentHours = machine.currentHours || 0;
             const unit = machine.usageUnit || 'Hours';
             const unitLabel = unit === 'KM' ? 'KM' : 'Hrs';
             const statusCalc = calculateServiceStatus(
-              machine.currentHours,
+              currentHours,
               machine.nextServiceDue,
               unit,
               machine.lastServiceHours
@@ -360,19 +366,19 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
             let remainingBadgeText = '';
             let remainingBadgeColor = 'text-slate-400 bg-slate-950 border-slate-800';
 
-            if (machine.nextServiceDue === undefined || machine.nextServiceDue === null) {
-              remainingBadgeText = `${machine.unitCode} - Target Unset`;
+            if (machine.nextServiceDue === undefined || machine.nextServiceDue === null || isNaN(machine.nextServiceDue)) {
+              remainingBadgeText = `${machine.unitCode || 'UNIT'} - Target Unset`;
             } else {
-              const diff = machine.nextServiceDue - machine.currentHours;
+              const diff = machine.nextServiceDue - currentHours;
               const roundedDiff = Math.round(diff * 10) / 10;
               if (diff <= 0) {
-                remainingBadgeText = `${machine.unitCode} - ${Math.abs(roundedDiff).toLocaleString()} ${unitLabel} OVERDUE`;
+                remainingBadgeText = `${machine.unitCode || 'UNIT'} - ${Math.abs(roundedDiff).toLocaleString()} ${unitLabel} OVERDUE`;
                 remainingBadgeColor = 'text-rose-400 bg-rose-950/40 border-rose-500/50 shadow-rose-950/30';
               } else if (diff <= (unit === 'KM' ? 1000 : 50)) {
-                remainingBadgeText = `${machine.unitCode} - ${roundedDiff.toLocaleString()} ${unitLabel} Remaining`;
+                remainingBadgeText = `${machine.unitCode || 'UNIT'} - ${roundedDiff.toLocaleString()} ${unitLabel} Remaining`;
                 remainingBadgeColor = 'text-amber-400 bg-amber-950/40 border-amber-500/50 shadow-amber-950/30';
               } else {
-                remainingBadgeText = `${machine.unitCode} - ${roundedDiff.toLocaleString()} ${unitLabel} Remaining`;
+                remainingBadgeText = `${machine.unitCode || 'UNIT'} - ${roundedDiff.toLocaleString()} ${unitLabel} Remaining`;
                 remainingBadgeColor = 'text-emerald-400 bg-emerald-950/30 border-emerald-500/40 shadow-emerald-950/20';
               }
             }
@@ -398,11 +404,11 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
                     {/* Smaller text under titles: Current Hours and Next Target */}
                     <div className="flex items-center gap-2 text-xs text-slate-400 mt-1 flex-wrap">
                       <span>
-                        Current: <strong className="text-slate-200 font-bold">{machine.currentHours.toLocaleString()} {unitLabel}</strong>
+                        Current: <strong className="text-slate-200 font-bold">{currentHours.toLocaleString()} {unitLabel}</strong>
                       </span>
                       <span>•</span>
                       <span>
-                        Next Due: <strong className="text-slate-300 font-semibold">{machine.nextServiceDue ? `${machine.nextServiceDue.toLocaleString()} ${unitLabel}` : 'Unset'}</strong>
+                        Next Due: <strong className="text-slate-300 font-semibold">{machine.nextServiceDue !== undefined && !isNaN(machine.nextServiceDue) ? `${machine.nextServiceDue.toLocaleString()} ${unitLabel}` : 'Unset'}</strong>
                       </span>
                       {machine.lastServiceDate && (
                         <>
@@ -428,7 +434,7 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
                 </div>
 
                 {/* Progress bar */}
-                {machine.nextServiceDue && (
+                {machine.nextServiceDue !== undefined && !isNaN(machine.nextServiceDue) && (
                   <div className="w-full bg-slate-950 rounded-full h-1.5 mt-3 overflow-hidden border border-slate-800/80">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
@@ -468,7 +474,7 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
                     </h3>
                   </div>
                   <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Rego / Serial: <span className="text-slate-300 font-semibold">{activeMachine.regoOrSerial}</span>
+                    Rego / Serial: <span className="text-slate-300 font-semibold">{activeMachine.regoOrSerial || 'N/A'}</span>
                   </p>
                 </div>
               </div>
@@ -490,7 +496,7 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
                     Current Meter Reading
                   </span>
                   <div className="font-mono text-2xl sm:text-3xl font-black text-amber-400 mt-0.5">
-                    {activeMachine.currentHours.toLocaleString()}{' '}
+                    {(activeMachine.currentHours || 0).toLocaleString()}{' '}
                     <span className="text-sm font-bold text-slate-400">{activeMachine.usageUnit === 'KM' ? 'KM' : 'Hrs'}</span>
                   </div>
                   {activeStatusCalc && (
@@ -572,7 +578,7 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
                   <label className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center justify-between">
                     <span>Next Service Due Target ({editableUnit})</span>
                     <span className="text-slate-400 font-normal">
-                      Current: {activeMachine.currentHours} {editableUnit}
+                      Current: {activeMachine.currentHours || 0} {editableUnit}
                     </span>
                   </label>
 
@@ -708,7 +714,7 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
 
                           <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-slate-300">
                             <Gauge className="w-3.5 h-3.5 text-amber-400" />
-                            <span>At: <strong className="text-white">{record.completedAtHours.toLocaleString()} {record.usageUnit || 'Hours'}</strong></span>
+                            <span>At: <strong className="text-white">{(record.completedAtHours || 0).toLocaleString()} {record.usageUnit || 'Hours'}</strong></span>
                           </div>
                         </div>
 
