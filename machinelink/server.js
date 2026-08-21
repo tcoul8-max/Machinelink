@@ -10,10 +10,85 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 // Paths to CSV and JSON storage files
+const STORAGE_DIR = __dirname;
 const PRESTARTS_CSV_PATH = path.join(__dirname, 'prestarts.csv');
 const DOCKETS_JSON_PATH = path.join(__dirname, 'dockets.json');
 const MACHINES_CSV_PATH = path.join(__dirname, 'machines.csv');
 const WORKERS_CSV_PATH = path.join(__dirname, 'workers.csv');
+const SERVICES_JSON_PATH = path.join(__dirname, 'services.json');
+
+const DEFAULT_MACHINES = [
+  {
+    id: 'm1',
+    unitCode: 'DEMO1',
+    name: 'Excavator',
+    regoOrSerial: '5739593667',
+    prestartType: 2,
+    currentHours: 1420.5,
+    status: 'Operational',
+    usageUnit: 'Hours',
+    nextServiceDue: 1500,
+    serviceInterval: 250,
+    lastServiceDate: '2026-07-15',
+    lastServiceHours: 1250.0,
+  },
+  {
+    id: 'm2',
+    unitCode: 'DEMO2',
+    name: 'Wheel Loader',
+    regoOrSerial: '14579076429',
+    prestartType: 1,
+    currentHours: 3890.0,
+    status: 'Operational',
+    usageUnit: 'Hours',
+    nextServiceDue: 4000,
+    serviceInterval: 250,
+    lastServiceDate: '2026-06-20',
+    lastServiceHours: 3750.0,
+  },
+  {
+    id: 'm3',
+    unitCode: 'DEMO3',
+    name: 'Dozer',
+    regoOrSerial: '67349294756',
+    prestartType: 2,
+    currentHours: 2150.2,
+    status: 'Operational',
+    usageUnit: 'Hours',
+    nextServiceDue: 2250,
+    serviceInterval: 250,
+    lastServiceDate: '2026-07-02',
+    lastServiceHours: 2000.0,
+  },
+  {
+    id: 'm4',
+    unitCode: 'DEMO4',
+    name: 'Backhoe Loader',
+    regoOrSerial: '124567890786',
+    prestartType: 1,
+    currentHours: 890.4,
+    status: 'Requires Service',
+    usageUnit: 'Hours',
+    nextServiceDue: 1000,
+    serviceInterval: 250,
+    lastServiceDate: '2026-05-10',
+    lastServiceHours: 600.0,
+  },
+  {
+    id: 'm5',
+    unitCode: 'DEMO5',
+    name: 'Toyota Hilux',
+    regoOrSerial: 'aaa111 (QLD)',
+    prestartType: 3,
+    currentHours: 124500,
+    status: 'Operational',
+    usageUnit: 'KM',
+    nextServiceDue: 130000,
+    serviceInterval: 10000,
+    lastServiceDate: '2026-06-11',
+    lastServiceHours: 120000,
+  }
+];
 
 // Initialize files if missing
 if (!fs.existsSync(PRESTARTS_CSV_PATH)) {
@@ -58,6 +133,18 @@ function deduplicateMachinesList(list) {
     if (!key) continue;
     if (map.has(key)) {
       const existing = map.get(key);
+      const validNextDue = (m.nextServiceDue !== undefined && m.nextServiceDue !== null && !isNaN(m.nextServiceDue))
+        ? m.nextServiceDue
+        : (existing.nextServiceDue !== undefined && existing.nextServiceDue !== null && !isNaN(existing.nextServiceDue) ? existing.nextServiceDue : undefined);
+
+      const validInterval = (m.serviceInterval !== undefined && m.serviceInterval !== null && !isNaN(m.serviceInterval))
+        ? m.serviceInterval
+        : (existing.serviceInterval !== undefined && existing.serviceInterval !== null && !isNaN(existing.serviceInterval) ? existing.serviceInterval : undefined);
+
+      const validLastHours = (m.lastServiceHours !== undefined && m.lastServiceHours !== null && !isNaN(m.lastServiceHours))
+        ? m.lastServiceHours
+        : (existing.lastServiceHours !== undefined && existing.lastServiceHours !== null && !isNaN(existing.lastServiceHours) ? existing.lastServiceHours : undefined);
+
       map.set(key, {
         ...existing,
         ...m,
@@ -69,10 +156,10 @@ function deduplicateMachinesList(list) {
         currentHours: m.currentHours !== undefined ? Math.max(existing.currentHours || 0, m.currentHours || 0) : (existing.currentHours || 0),
         status: m.status || existing.status || 'Operational',
         usageUnit: m.usageUnit || existing.usageUnit || 'Hours',
-        nextServiceDue: m.nextServiceDue !== undefined ? m.nextServiceDue : existing.nextServiceDue,
-        serviceInterval: m.serviceInterval !== undefined ? m.serviceInterval : existing.serviceInterval,
+        nextServiceDue: validNextDue,
+        serviceInterval: validInterval,
         lastServiceDate: m.lastServiceDate || existing.lastServiceDate,
-        lastServiceHours: m.lastServiceHours !== undefined ? m.lastServiceHours : existing.lastServiceHours,
+        lastServiceHours: validLastHours,
         serviceNotes: m.serviceNotes || existing.serviceNotes,
       });
     } else {
@@ -365,6 +452,41 @@ app.post('/api/master/workers', (req, res) => {
   workers.push(newWorker);
   saveWorkers(workers);
   res.json({ success: true, workers });
+});
+
+// 7b. Maintenance Services
+app.get('/api/services', (req, res) => {
+  if (fs.existsSync(SERVICES_JSON_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(SERVICES_JSON_PATH, 'utf-8'));
+      if (Array.isArray(data)) return res.json(data);
+    } catch (e) {}
+  }
+  res.json([]);
+});
+
+app.post('/api/services', (req, res) => {
+  const payload = req.body;
+  const newServices = Array.isArray(payload) ? payload : [payload];
+  let existingServices = [];
+  if (fs.existsSync(SERVICES_JSON_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(SERVICES_JSON_PATH, 'utf-8'));
+      if (Array.isArray(data)) existingServices = data;
+    } catch (e) {}
+  }
+
+  const map = new Map();
+  existingServices.forEach(s => { if (s && s.id) map.set(s.id, s); });
+  newServices.forEach(s => {
+    if (s && s.id) {
+      map.set(s.id, { ...s, synced: true, serverReceivedAt: new Date().toISOString() });
+    }
+  });
+
+  const updatedList = Array.from(map.values()).sort((a, b) => new Date(b.serviceDate || 0).getTime() - new Date(a.serviceDate || 0).getTime());
+  fs.writeFileSync(SERVICES_JSON_PATH, JSON.stringify(updatedList, null, 2), 'utf-8');
+  res.json({ success: true, services: updatedList });
 });
 
 // 8. Download Reports

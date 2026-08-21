@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Wrench,
   CalendarCheck,
@@ -87,15 +87,29 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
   }, []);
 
   const activeMachine = machines.find(m => m.id === activeMachineModalId || m.unitCode === activeMachineModalId) || null;
+  const lastMachineIdRef = useRef<string | null>(null);
 
-  // Sync active machine editable fields when a machine is tapped
+  // Sync active machine editable fields when selected machine is opened or switched
   useEffect(() => {
     if (activeMachine) {
-      setEditableNextDue(activeMachine.nextServiceDue !== undefined ? String(activeMachine.nextServiceDue) : '');
-      setEditableUnit(activeMachine.usageUnit || 'Hours');
-      setEditableInterval(activeMachine.serviceInterval ? String(activeMachine.serviceInterval) : (activeMachine.usageUnit === 'KM' ? '10000' : '250'));
+      const isNewMachine = lastMachineIdRef.current !== activeMachine.id;
+      if (isNewMachine) {
+        lastMachineIdRef.current = activeMachine.id;
+        setEditableNextDue(activeMachine.nextServiceDue !== undefined && activeMachine.nextServiceDue !== null && !isNaN(activeMachine.nextServiceDue) ? String(activeMachine.nextServiceDue) : '');
+        setEditableUnit(activeMachine.usageUnit || 'Hours');
+        setEditableInterval(activeMachine.serviceInterval ? String(activeMachine.serviceInterval) : (activeMachine.usageUnit === 'KM' ? '10000' : '250'));
+      } else if (activeMachine.nextServiceDue !== undefined && activeMachine.nextServiceDue !== null && !isNaN(activeMachine.nextServiceDue)) {
+        // If external sync brings a valid nextServiceDue, update if not currently editing or if matching
+        setEditableNextDue(String(activeMachine.nextServiceDue));
+        setEditableUnit(activeMachine.usageUnit || 'Hours');
+        if (activeMachine.serviceInterval) {
+          setEditableInterval(String(activeMachine.serviceInterval));
+        }
+      }
+    } else {
+      lastMachineIdRef.current = null;
     }
-  }, [activeMachine?.id, activeMachine?.nextServiceDue, activeMachine?.usageUnit]);
+  }, [activeMachine?.id, activeMachine?.nextServiceDue, activeMachine?.usageUnit, activeMachine?.serviceInterval]);
 
   // Open Service Completed modal for active machine
   const handleOpenServiceModal = () => {
@@ -119,16 +133,31 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
   // Save updated service configuration for machine
   const handleSaveSettings = async () => {
     if (!activeMachine) return;
-    const nextDueNum = editableNextDue ? parseFloat(editableNextDue) : undefined;
-    const intervalNum = editableInterval ? parseFloat(editableInterval) : undefined;
+    const nextDueNum = editableNextDue.trim() !== '' && !isNaN(parseFloat(editableNextDue)) ? parseFloat(editableNextDue) : undefined;
+    const intervalNum = editableInterval.trim() !== '' && !isNaN(parseFloat(editableInterval)) ? parseFloat(editableInterval) : undefined;
 
-    await updateMachineServiceSettings(activeMachine.id, {
+    // Immediately keep the user input in state
+    if (nextDueNum !== undefined) {
+      setEditableNextDue(String(nextDueNum));
+    }
+
+    const updated = await updateMachineServiceSettings(activeMachine.id, {
       usageUnit: editableUnit,
       nextServiceDue: nextDueNum,
       serviceInterval: intervalNum,
     });
 
-    if (onDataUpdated) onDataUpdated();
+    if (updated && updated.nextServiceDue !== undefined) {
+      setEditableNextDue(String(updated.nextServiceDue));
+    }
+
+    if (onDataUpdated) {
+      try {
+        await onDataUpdated();
+      } catch (e) {
+        // Safe fallback
+      }
+    }
 
     setSaveSuccessMsg('Service settings saved successfully!');
     setTimeout(() => setSaveSuccessMsg(null), 3000);

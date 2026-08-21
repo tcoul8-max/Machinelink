@@ -16,6 +16,11 @@ export const INITIAL_MACHINES: Machine[] = [
     prestartType: 2, // Tracked Heavy
     currentHours: 1420.5,
     status: 'Operational',
+    usageUnit: 'Hours',
+    nextServiceDue: 1500,
+    serviceInterval: 250,
+    lastServiceDate: '2026-07-15',
+    lastServiceHours: 1250.0,
   },
   {
     id: 'm2',
@@ -25,6 +30,11 @@ export const INITIAL_MACHINES: Machine[] = [
     prestartType: 1, // Wheeled Heavy
     currentHours: 3890.0,
     status: 'Operational',
+    usageUnit: 'Hours',
+    nextServiceDue: 4000,
+    serviceInterval: 250,
+    lastServiceDate: '2026-06-20',
+    lastServiceHours: 3750.0,
   },
   {
     id: 'm3',
@@ -34,6 +44,11 @@ export const INITIAL_MACHINES: Machine[] = [
     prestartType: 2, // Tracked Heavy
     currentHours: 2150.2,
     status: 'Operational',
+    usageUnit: 'Hours',
+    nextServiceDue: 2250,
+    serviceInterval: 250,
+    lastServiceDate: '2026-07-02',
+    lastServiceHours: 2000.0,
   },
   {
     id: 'm4',
@@ -43,6 +58,11 @@ export const INITIAL_MACHINES: Machine[] = [
     prestartType: 1, // Wheeled Heavy
     currentHours: 890.4,
     status: 'Requires Service',
+    usageUnit: 'Hours',
+    nextServiceDue: 1000,
+    serviceInterval: 250,
+    lastServiceDate: '2026-05-10',
+    lastServiceHours: 600.0,
   },
   {
     id: 'm5',
@@ -52,6 +72,11 @@ export const INITIAL_MACHINES: Machine[] = [
     prestartType: 3, // Light Vehicles
     currentHours: 124500, // km / hours
     status: 'Operational',
+    usageUnit: 'KM',
+    nextServiceDue: 130000,
+    serviceInterval: 10000,
+    lastServiceDate: '2026-06-11',
+    lastServiceHours: 120000,
   }
 ];
 
@@ -282,6 +307,18 @@ export function deduplicateMachines(list: Machine[]): Machine[] {
     if (!key) continue;
     if (map.has(key)) {
       const existing = map.get(key)!;
+      const validNextDue = (m.nextServiceDue !== undefined && m.nextServiceDue !== null && !isNaN(m.nextServiceDue)) 
+        ? m.nextServiceDue 
+        : (existing.nextServiceDue !== undefined && existing.nextServiceDue !== null && !isNaN(existing.nextServiceDue) ? existing.nextServiceDue : undefined);
+
+      const validInterval = (m.serviceInterval !== undefined && m.serviceInterval !== null && !isNaN(m.serviceInterval))
+        ? m.serviceInterval
+        : (existing.serviceInterval !== undefined && existing.serviceInterval !== null && !isNaN(existing.serviceInterval) ? existing.serviceInterval : undefined);
+
+      const validLastHours = (m.lastServiceHours !== undefined && m.lastServiceHours !== null && !isNaN(m.lastServiceHours))
+        ? m.lastServiceHours
+        : (existing.lastServiceHours !== undefined && existing.lastServiceHours !== null && !isNaN(existing.lastServiceHours) ? existing.lastServiceHours : undefined);
+
       map.set(key, {
         ...existing,
         ...m,
@@ -290,13 +327,13 @@ export function deduplicateMachines(list: Machine[]): Machine[] {
         name: m.name || existing.name,
         regoOrSerial: m.regoOrSerial || existing.regoOrSerial || '',
         prestartType: m.prestartType || existing.prestartType || 1,
-        currentHours: m.currentHours !== undefined ? Math.max(existing.currentHours || 0, m.currentHours || 0) : existing.currentHours,
+        currentHours: m.currentHours !== undefined ? Math.max(existing.currentHours || 0, m.currentHours || 0) : (existing.currentHours || 0),
         status: m.status || existing.status || 'Operational',
         usageUnit: m.usageUnit || existing.usageUnit || 'Hours',
-        nextServiceDue: m.nextServiceDue !== undefined ? m.nextServiceDue : existing.nextServiceDue,
-        serviceInterval: m.serviceInterval !== undefined ? m.serviceInterval : existing.serviceInterval,
+        nextServiceDue: validNextDue,
+        serviceInterval: validInterval,
         lastServiceDate: m.lastServiceDate || existing.lastServiceDate,
-        lastServiceHours: m.lastServiceHours !== undefined ? m.lastServiceHours : existing.lastServiceHours,
+        lastServiceHours: validLastHours,
         serviceNotes: m.serviceNotes || existing.serviceNotes,
       });
     } else {
@@ -364,20 +401,7 @@ export function getSavedMachines(): Machine[] {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const deduped = deduplicateMachines(parsed);
-          // If only 1 machine or lost initial fleet, merge with INITIAL_MACHINES so other fleet items aren't deleted
-          const map = new Map<string, Machine>();
-          INITIAL_MACHINES.forEach(m => map.set((m.unitCode || m.id).toUpperCase(), m));
-          deduped.forEach(m => {
-            const k = (m.unitCode || m.id).toUpperCase();
-            if (map.has(k)) {
-              map.set(k, { ...map.get(k)!, ...m });
-            } else {
-              map.set(k, m);
-            }
-          });
-          const merged = Array.from(map.values());
-          return merged;
+          return deduplicateMachines([...INITIAL_MACHINES, ...parsed]);
         }
       } catch (e) {
         // fallback

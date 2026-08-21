@@ -1,0 +1,72 @@
+[
+  {
+    "id": "m1",
+    "unitCode": "DEMO1",
+    "name": "Excavator",
+    "regoOrSerial": "5739593667",
+    "prestartType": 2,
+    "currentHours": 1420.5,
+    "status": "Operational",
+    "usageUnit": "Hours",
+    "nextServiceDue": 1500,
+    "serviceInterval": 250,
+    "lastServiceDate": "2026-07-15",
+    "lastServiceHours": 1250
+  },
+  {
+    "id": "m2",
+    "unitCode": "DEMO2",
+    "name": "Wheel Loader",
+    "regoOrSerial": "14579076429",
+    "prestartType": 1,
+    "currentHours": 3890,
+    "status": "Operational",
+    "usageUnit": "Hours",
+    "nextServiceDue": 4000,
+    "serviceInterval": 250,
+    "lastServiceDate": "2026-06-20",
+    "lastServiceHours": 3750
+  },
+  {
+    "id": "m3",
+    "unitCode": "DEMO3",
+    "name": "Dozer",
+    "regoOrSerial": "67349294756",
+    "prestartType": 2,
+    "currentHours": 2150.2,
+    "status": "Operational",
+    "usageUnit": "Hours",
+    "nextServiceDue": 2250,
+    "serviceInterval": 250,
+    "lastServiceDate": "2026-07-02",
+    "lastServiceHours": 2000
+  },
+  {
+    "id": "m4",
+    "unitCode": "DEMO4",
+    "name": "Backhoe Loader",
+    "regoOrSerial": "124567890786",
+    "prestartType": 1,
+    "currentHours": 890.4,
+    "status": "Requires Service",
+    "usageUnit": "Hours",
+    "nextServiceDue": 1000,
+    "serviceInterval": 250,
+    "lastServiceDate": "2026-05-10",
+    "lastServiceHours": 600
+  },
+  {
+    "id": "m5",
+    "unitCode": "DEMO5",
+    "name": "Toyota Hilux",
+    "regoOrSerial": "aaa111 (QLD)",
+    "prestartType": 3,
+    "currentHours": 124500,
+    "status": "Operational",
+    "usageUnit": "KM",
+    "nextServiceDue": 130000,
+    "serviceInterval": 10000,
+    "lastServiceDate": "2026-06-11",
+    "lastServiceHours": 120000
+  }
+]

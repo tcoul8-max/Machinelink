@@ -255,7 +255,7 @@ export async function recordCompletedService(params: {
   if (mIdx >= 0) {
     machines[mIdx] = {
       ...machines[mIdx],
-      currentHours: Math.max(machines[mIdx].currentHours, completedAtHours),
+      currentHours: Math.max(machines[mIdx].currentHours || 0, completedAtHours),
       nextServiceDue: nextServiceDue,
       lastServiceDate: serviceDate,
       lastServiceHours: completedAtHours,
@@ -270,6 +270,7 @@ export async function recordCompletedService(params: {
   // 3. Dispatch events
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('services-updated', { detail: newRecord }));
+    window.dispatchEvent(new CustomEvent('machines-updated'));
   }
 
   // 4. Async Sync to Server
@@ -283,11 +284,16 @@ export async function recordCompletedService(params: {
 
     // Also update machine master on server
     if (mIdx >= 0) {
-      await smartFetchApi('/api/master/machines', {
+      const { data: mResp } = await smartFetchApi('/api/master/machines', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(machines[mIdx]),
       }, targetIp);
+
+      const serverList = Array.isArray(mResp) ? mResp : (mResp?.machines && Array.isArray(mResp.machines) ? mResp.machines : null);
+      if (serverList && serverList.length > 0) {
+        saveSavedMachines(serverList);
+      }
     }
   } catch (e) {
     console.log('Saved service record offline. Will synchronize when online.');
@@ -318,6 +324,7 @@ export async function updateMachineServiceSettings(
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('services-updated'));
+    window.dispatchEvent(new CustomEvent('machines-updated'));
   }
 
   try {
@@ -327,8 +334,9 @@ export async function updateMachineServiceSettings(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(machines[mIdx]),
     }, targetIp);
-    if (mResp && Array.isArray(mResp.machines) && mResp.machines.length > 0) {
-      saveSavedMachines(mResp.machines);
+    const serverList = Array.isArray(mResp) ? mResp : (mResp?.machines && Array.isArray(mResp.machines) ? mResp.machines : null);
+    if (serverList && serverList.length > 0) {
+      saveSavedMachines(serverList);
     }
   } catch (e) {
     console.log('Saved machine service settings offline.');

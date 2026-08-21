@@ -536,6 +536,18 @@ function deduplicateMachinesList(list: any[]): any[] {
     if (!key) continue;
     if (map.has(key)) {
       const existing = map.get(key);
+      const validNextDue = (m.nextServiceDue !== undefined && m.nextServiceDue !== null && !isNaN(m.nextServiceDue))
+        ? m.nextServiceDue
+        : (existing.nextServiceDue !== undefined && existing.nextServiceDue !== null && !isNaN(existing.nextServiceDue) ? existing.nextServiceDue : undefined);
+
+      const validInterval = (m.serviceInterval !== undefined && m.serviceInterval !== null && !isNaN(m.serviceInterval))
+        ? m.serviceInterval
+        : (existing.serviceInterval !== undefined && existing.serviceInterval !== null && !isNaN(existing.serviceInterval) ? existing.serviceInterval : undefined);
+
+      const validLastHours = (m.lastServiceHours !== undefined && m.lastServiceHours !== null && !isNaN(m.lastServiceHours))
+        ? m.lastServiceHours
+        : (existing.lastServiceHours !== undefined && existing.lastServiceHours !== null && !isNaN(existing.lastServiceHours) ? existing.lastServiceHours : undefined);
+
       map.set(key, {
         ...existing,
         ...m,
@@ -547,10 +559,10 @@ function deduplicateMachinesList(list: any[]): any[] {
         currentHours: m.currentHours !== undefined ? Math.max(existing.currentHours || 0, m.currentHours || 0) : (existing.currentHours || 0),
         status: m.status || existing.status || 'Operational',
         usageUnit: m.usageUnit || existing.usageUnit || 'Hours',
-        nextServiceDue: m.nextServiceDue !== undefined ? m.nextServiceDue : existing.nextServiceDue,
-        serviceInterval: m.serviceInterval !== undefined ? m.serviceInterval : existing.serviceInterval,
+        nextServiceDue: validNextDue,
+        serviceInterval: validInterval,
         lastServiceDate: m.lastServiceDate || existing.lastServiceDate,
-        lastServiceHours: m.lastServiceHours !== undefined ? m.lastServiceHours : existing.lastServiceHours,
+        lastServiceHours: validLastHours,
         serviceNotes: m.serviceNotes || existing.serviceNotes,
       });
     } else {
@@ -1002,28 +1014,6 @@ app.get('/api/master/machines', async (req, res) => {
 });
 
 app.post('/api/master/machines', async (req, res) => {
-  const targetIp = (req.query.ip as string || req.body?.ip || '').trim();
-  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
-    const targetUrl = formatTargetUrl(targetIp);
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-      const r = await fetch(`${targetUrl}/api/master/machines`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req.body),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      if (r.ok) {
-        const data = await r.json();
-        return res.json(data);
-      }
-    } catch (e) {
-      // Silent fallback
-    }
-  }
-
   let machines = getMachines();
   const payload = req.body;
   const itemsToUpsert = Array.isArray(payload) ? payload : (payload.machines && Array.isArray(payload.machines) ? payload.machines : [payload]);
@@ -1043,6 +1033,25 @@ app.post('/api/master/machines', async (req, res) => {
 
   machines = deduplicateMachinesList(machines);
   saveMachines(machines);
+
+  const targetIp = (req.query.ip as string || req.body?.ip || '').trim();
+  if (targetIp && targetIp !== '3000' && targetIp !== 'local') {
+    const targetUrl = formatTargetUrl(targetIp);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      await fetch(`${targetUrl}/api/master/machines`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+    } catch (e) {
+      // Remote fail handled silently
+    }
+  }
+
   res.json({ success: true, machines: getMachines() });
 });
 
